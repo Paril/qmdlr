@@ -1,0 +1,26 @@
+#pragma once
+
+#include <QMainWindow>
+#include "modeldata.h"
+
+QT_BEGIN_NAMESPACE
+namespace Ui { class MainWindow; }
+QT_END_NAMESPACE
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+
+private:
+    Ui::MainWindow *ui;
+    ModelData activeModel;
+
+    void openClicked(bool toggled);
+
+public:
+    void loadModel(QString path);
+};
