@@ -1,6 +1,12 @@
 #include "glad.h"
 #include "mainwindow.h"
 #include "qmdlrenderer.h"
+#define TCPP_IMPLEMENTATION
+#include "tcppLibrary.hpp"
+#include <optional>
+#include <QFile>
+#include <QDir>
+#include <QFileInfo>
 
 struct GPUAxisData
 {
@@ -19,6 +25,36 @@ QMDLRenderer::QMDLRenderer(QWidget *parent) :
     
     _horizontalSplit = MainWindow::instance().settings.value("HorizontalSplit", 0.5f).toFloat();
     _verticalSplit = MainWindow::instance().settings.value("VerticalSplit", 0.5f).toFloat();
+}
+
+class QFileStream : public tcpp::IInputStream
+{
+    QFile file;
+
+public:
+    inline QFileStream(const char *filename) :
+        file(filename)
+    {
+        file.open(QFile::ReadOnly | QFile::Text);
+    }
+
+	virtual std::string ReadLine() TCPP_NOEXCEPT override
+    {
+        return file.readLine().toStdString();
+    }
+
+    virtual bool HasNextLine() const TCPP_NOEXCEPT override
+    {
+        return !file.atEnd();
+    }
+};
+
+static std::string preprocessShader(const char *filename)
+{
+    tcpp::Lexer lexer(std::make_unique<QFileStream>(filename));
+    tcpp::Preprocessor::TPreprocessorConfigInfo info;
+    tcpp::Preprocessor p(lexer, info);
+    return p.Process();
 }
 
 void QMDLRenderer::generateGrid(float grid_size, size_t count)
@@ -91,8 +127,41 @@ static inline void createBuiltInTexture(GLuint &out, const std::initializer_list
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.begin());
 }
 
+static std::optional<std::string> loadShader(const char *filename)
+{
+    QDir shaderPath("res/shaders");
+
+    if (!shaderPath.exists())
+    {
+        shaderPath.setPath("../../../res/shaders");
+
+        if (!shaderPath.exists())
+            return std::nullopt;
+    }
+
+    QFileInfo file(shaderPath, filename);
+
+    if (!file.exists())
+        return std::nullopt;
+
+    QFile f(file.filePath());
+
+    if (!f.open(QFile::ReadOnly | QFile::Text))
+        return std::nullopt;
+
+    return f.readAll().toStdString();
+}
+
 void QMDLRenderer::initializeGL()
 {
+    _logger = std::make_unique<QOpenGLDebugLogger>(this);
+    if (_logger->initialize()) {
+        connect(_logger.get(), &QOpenGLDebugLogger::messageLogged, this, [](const QOpenGLDebugMessage &debugMessage) {
+            qDebug() << debugMessage.message();
+        });
+        _logger->startLogging(QOpenGLDebugLogger::SynchronousLogging);
+    }
+
     gladLoadGL();
 
     glFrontFace(GL_CW);
@@ -107,61 +176,24 @@ void QMDLRenderer::initializeGL()
 
     glGenTextures(1, &_modelTexture);
 
-    const char *vertexShaderSource = R"SHADER(
-#version 330 core
+    _modelProgram.program = createProgram(
+        createShader(GL_VERTEX_SHADER, loadShader("model.vert.glsl")->c_str()),
+        createShader(GL_FRAGMENT_SHADER, loadShader("model.frag.glsl")->c_str()));
+    glUseProgram(_modelProgram.program);
 
-uniform mat4 u_projection;
-uniform mat4 u_modelview;
- 
-in vec3 i_position;
-in vec2 i_texcoord;
-in vec4 i_color;
+    _modelProgram.projectionUniformLocation = glGetUniformLocation(_modelProgram.program, "u_projection");
+    _modelProgram.modelviewUniformLocation = glGetUniformLocation(_modelProgram.program, "u_modelview");
 
-out vec4 v_color;
-out vec2 v_texcoord;
- 
-void main()
-{
-v_color = i_color;
-v_texcoord = i_texcoord;
-gl_Position = u_projection * u_modelview * vec4(i_position, 1.0);
-}
-)SHADER";
- 
-const char *fragmentShaderSource = R"SHADER(
-#version 330 core 
- 
-precision mediump float;
+    glUniform1i(glGetUniformLocation(_modelProgram.program, "u_texture"), 0);
+    glUniform1i(glGetUniformLocation(_modelProgram.program, "u_shaded"), 1);
 
-uniform sampler2D u_texture;
+    _simpleProgram.program = createProgram(
+        createShader(GL_VERTEX_SHADER, loadShader("simple.vert.glsl")->c_str()),
+        createShader(GL_FRAGMENT_SHADER, loadShader("simple.frag.glsl")->c_str()));
+    glUseProgram(_simpleProgram.program);
 
-in vec4 v_color;
-in vec2 v_texcoord;
- 
-out vec4 o_color;
- 
-void main()
-{
-o_color = texture2D(u_texture, v_texcoord) * v_color;
-}
-)SHADER";
-
-    GLuint vertexShader = createShader(GL_VERTEX_SHADER, vertexShaderSource);
-    GLuint fragmentShader = createShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
-
-    _program = createProgram(vertexShader, fragmentShader);
-        
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-        
-    _projectionUniformLocation = glGetUniformLocation(_program, "u_projection");
-    _modelviewUniformLocation = glGetUniformLocation(_program, "u_modelview");
-
-    glUniform1i(glGetUniformLocation(_program, "u_texture"), 0);
-        
-    _positionAttributeLocation = glGetAttribLocation(_program, "i_position");
-    _texcoordAttributeLocation = glGetAttribLocation(_program, "i_texcoord");
-    _colorAttributeLocation = glGetAttribLocation(_program, "i_color");
+    _simpleProgram.projectionUniformLocation = glGetUniformLocation(_simpleProgram.program, "u_projection");
+    _simpleProgram.modelviewUniformLocation = glGetUniformLocation(_simpleProgram.program, "u_modelview");
 
     glGenBuffers(1, &_gridBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _gridBuffer);
@@ -169,10 +201,11 @@ o_color = texture2D(u_texture, v_texcoord) * v_color;
 
     glGenVertexArrays(1, &_gridVao);
     glBindVertexArray(_gridVao);
-    glEnableVertexAttribArray(_positionAttributeLocation);
-    glDisableVertexAttribArray(_texcoordAttributeLocation);
-    glDisableVertexAttribArray(_colorAttributeLocation);
-    glVertexAttribPointer(_positionAttributeLocation, 3, GL_FLOAT, false, sizeof(QVector3D), nullptr);
+    glEnableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+    glDisableVertexAttribArray(3);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(QVector3D), nullptr);
         
     glGenBuffers(1, &_axisBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _axisBuffer);
@@ -180,33 +213,42 @@ o_color = texture2D(u_texture, v_texcoord) * v_color;
 
     glGenVertexArrays(1, &_axisVao);
     glBindVertexArray(_axisVao);
-    glEnableVertexAttribArray(_positionAttributeLocation);
-    glDisableVertexAttribArray(_texcoordAttributeLocation);
-    glEnableVertexAttribArray(_colorAttributeLocation);
-    glVertexAttribPointer(_positionAttributeLocation, 3, GL_FLOAT, false, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, position)));
-    glVertexAttribPointer(_colorAttributeLocation, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, color)));
+    glEnableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glDisableVertexAttribArray(3);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, position)));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUAxisData), reinterpret_cast<const GLvoid *>(offsetof(GPUAxisData, color)));
 
     glGenBuffers(1, &_buffer);
+    
+    glGenBuffers(1, &_smoothNormalBuffer);
+    glGenBuffers(1, &_flatNormalBuffer);
+
     glBindBuffer(GL_ARRAY_BUFFER, _buffer);
 
     glGenVertexArrays(1, &_vao);
     glBindVertexArray(_vao);
-    glEnableVertexAttribArray(_positionAttributeLocation);
-    glEnableVertexAttribArray(_texcoordAttributeLocation);
-    glDisableVertexAttribArray(_colorAttributeLocation);
-    glVertexAttribPointer(_positionAttributeLocation, 3, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, position)));
-    glVertexAttribPointer(_texcoordAttributeLocation, 2, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, texcoord)));
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(3);
+    glDisableVertexAttribArray(2);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, position)));
+    glVertexAttribPointer(1, 2, GL_FLOAT, false, sizeof(GPUVertexData), reinterpret_cast<const GLvoid *>(offsetof(GPUVertexData, texcoord)));
+    glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
+    glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, nullptr);
 
     glGenBuffers(1, &_pointBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, _pointBuffer);
 
     glGenVertexArrays(1, &_pointVao);
     glBindVertexArray(_pointVao);
-    glEnableVertexAttribArray(_positionAttributeLocation);
-    glEnableVertexAttribArray(_colorAttributeLocation);
-    glDisableVertexAttribArray(_texcoordAttributeLocation);
-    glVertexAttribPointer(_positionAttributeLocation, 3, GL_FLOAT, false, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, position)));
-    glVertexAttribPointer(_colorAttributeLocation, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, color)));
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(2);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(3);
+    glVertexAttribPointer(0, 3, GL_FLOAT, false, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, position)));
+    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, true, sizeof(GPUPointData), reinterpret_cast<const GLvoid *>(offsetof(GPUPointData, color)));
 }
 
 void QMDLRenderer::resizeGL(int w, int h)
@@ -396,33 +438,22 @@ void QMDLRenderer::clearQuadrant(QuadRect rect, QVector4D color)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void QMDLRenderer::setupWireframe()
+void QMDLRenderer::drawModels(const Matrix4 &projection, RenderMode mode, bool backfaces, bool smoothNormals, bool is_2d)
 {
-    glBindTexture(GL_TEXTURE_2D, _blackTexture);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-}
-
-void QMDLRenderer::setupTextured()
-{
-    glBindTexture(GL_TEXTURE_2D, _modelTexture);
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-}
-
-void QMDLRenderer::drawModels(const Matrix4 &projection, bool is_2d)
-{
-    glUniformMatrix4fv(_projectionUniformLocation, 1, false, projection.data());
+    glUseProgram(_simpleProgram.program);
+    glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, projection.data());
 
     glDisable(GL_CULL_FACE);
-
-    setupTextured();
+    
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glBindTexture(GL_TEXTURE_2D, _whiteTexture);
 
     if (MainWindow::instance().showGrid())
     {
         glBindVertexArray(_gridVao);
         glBindBuffer(GL_ARRAY_BUFFER, _gridBuffer);
-        glVertexAttrib4f(_colorAttributeLocation, 1.0f, 0.5f, 0.0f, 0.50f);
-        glVertexAttrib2f(_texcoordAttributeLocation, 1.0f, 1.0f);
+        glVertexAttrib4f(2, 1.0f, 0.5f, 0.0f, 0.50f);
+        glVertexAttrib2f(1, 1.0f, 1.0f);
         glDrawArrays(GL_LINES, 0, _gridSize);
     }
     
@@ -439,18 +470,33 @@ void QMDLRenderer::drawModels(const Matrix4 &projection, bool is_2d)
 
     if (!_model)
         return;
+    
+    glUseProgram(_modelProgram.program);
+    glUniformMatrix4fv(_modelProgram.projectionUniformLocation, 1, false, projection.data());
 
     // model
     glBindVertexArray(_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, _buffer);
-    glVertexAttrib4f(_colorAttributeLocation, 1.0f, 1.0f, 1.0f, 1.0f);
+    glVertexAttrib4f(2, 1.0f, 1.0f, 1.0f, 1.0f);
 
-    glEnable(GL_CULL_FACE);
-
-    if (is_2d)
-        setupWireframe();
+    if (smoothNormals)
+        glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     else
-        setupTextured();
+        glBindBuffer(GL_ARRAY_BUFFER, _flatNormalBuffer);
+
+    glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, nullptr);
+
+    if (!backfaces)
+        glEnable(GL_CULL_FACE);
+
+    if (mode == RenderMode::Wireframe)
+    {
+        glBindTexture(GL_TEXTURE_2D, _blackTexture);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    }
+    else if (mode == RenderMode::Flat)
+        glBindTexture(GL_TEXTURE_2D, _whiteTexture);
+    else
+        glBindTexture(GL_TEXTURE_2D, _modelTexture);
 
     glDrawArrays(GL_TRIANGLES, 0, _bufferData.size());
     
@@ -465,7 +511,7 @@ void QMDLRenderer::drawModels(const Matrix4 &projection, bool is_2d)
         Matrix4 depthProj = projection;
         if (!depthProj(3, 3))
         {
-            constexpr float n = 0.1;
+            constexpr float n = 0.1f;
             constexpr float f = 1024;
             constexpr float delta = 0.25f;
             constexpr float pz = 8.5f;
@@ -475,7 +521,9 @@ void QMDLRenderer::drawModels(const Matrix4 &projection, bool is_2d)
         }
         else
             depthProj.scale(1.0f, 1.0f, 0.98f);
-        glUniformMatrix4fv(_projectionUniformLocation, 1, false, depthProj.data());
+
+        glUseProgram(_simpleProgram.program);
+        glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, depthProj.data());
 
         glBindTexture(GL_TEXTURE_2D, _whiteTexture);
         glBindVertexArray(_pointVao);
@@ -517,12 +565,15 @@ void QMDLRenderer::draw2D(Orientation2D orientation, QuadrantFocus quadrant)
         modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
         modelview.rotate(-90, 0.0f, 1.0f, 0.0f);
     }
-        
-    glUniformMatrix4fv(_modelviewUniformLocation, 1, false, modelview.data());
+    
+    glUseProgram(_simpleProgram.program);
+    glUniformMatrix4fv(_simpleProgram.modelviewUniformLocation, 1, false, modelview.data());
+    glUseProgram(_modelProgram.program);
+    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
     clearQuadrant(rect, { 0.4f, 0.4f, 0.4f, 1.0f });
 
-    drawModels(projection, true);
+    drawModels(projection, MainWindow::instance().renderMode2D(), MainWindow::instance().drawBackfaces2D(), MainWindow::instance().smoothNormals2D(), true);
 }
 
 void QMDLRenderer::draw3D(QuadrantFocus quadrant)
@@ -535,11 +586,15 @@ void QMDLRenderer::draw3D(QuadrantFocus quadrant)
     Matrix4 modelview = _camera.getViewMatrix();
     modelview.rotate(-90, { 1, 0, 0 });
     modelview.translate(-_2dOffset.y(), _2dOffset.x(), _2dOffset.z());
-    glUniformMatrix4fv(_modelviewUniformLocation, 1, false, modelview.data());
+
+    glUseProgram(_simpleProgram.program);
+    glUniformMatrix4fv(_simpleProgram.modelviewUniformLocation, 1, false, modelview.data());
+    glUseProgram(_modelProgram.program);
+    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
 
     clearQuadrant(rect, { 0.4f, 0.4f, 0.4f, 1.0f });
 
-    drawModels(_camera.getProjectionMatrix(), false);
+    drawModels(_camera.getProjectionMatrix(), MainWindow::instance().renderMode3D(), MainWindow::instance().drawBackfaces3D(), MainWindow::instance().smoothNormals3D(), false);
 }
     
 void QMDLRenderer::paintGL()
@@ -555,9 +610,7 @@ void QMDLRenderer::paintGL()
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        
-    glUseProgram(_program);
-        
+
     draw2D(Orientation2D::XY, QuadrantFocus::TopLeft);
     draw2D(Orientation2D::ZY, QuadrantFocus::BottomLeft);
     draw2D(Orientation2D::XZ, QuadrantFocus::BottomRight);
@@ -601,7 +654,16 @@ GLuint QMDLRenderer::createProgram(GLuint vertexShader, GLuint fragmentShader)
 	GLuint program = glCreateProgram();
 	glAttachShader(program, vertexShader);
 	glAttachShader(program, fragmentShader);
+    
+    glBindAttribLocation(program, 0, "i_position");
+    glBindAttribLocation(program, 1, "i_texcoord");
+    glBindAttribLocation(program, 2, "i_color");
+    glBindAttribLocation(program, 3, "i_normal");
+
 	glLinkProgram(program);
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
 
     GLint status;
 	glGetProgramiv(program, GL_LINK_STATUS, &status);
@@ -616,13 +678,32 @@ GLuint QMDLRenderer::createProgram(GLuint vertexShader, GLuint fragmentShader)
     throw std::runtime_error(infoLog);
 }
 
+/*    if (full_upload)
+        glBufferData(GL_ARRAY_BUFFER, sizeof(GPUVertexData) * count, _bufferData.data(), GL_DYNAMIC_DRAW);
+    else
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GPUVertexData) * count, _bufferData.data());
+*/
+
+template<typename T>
+static void uploadToBuffer(GLuint buffer, bool full_upload, const std::vector<T> &data)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, buffer);
+
+    if (full_upload)
+        glBufferData(GL_ARRAY_BUFFER, sizeof(T) * data.size(), data.data(), GL_DYNAMIC_DRAW);
+    else
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(T) * data.size(), data.data());
+}
+
 void QMDLRenderer::rebuildBuffer()
 {
     size_t count = _model->triangles.size() * 3;
     bool full_upload = _bufferData.size() < count;
     _bufferData.resize(count);
     _pointData.resize(count);
-    size_t n = 0, pn = 0;
+    _smoothNormalData.resize(count);
+    _flatNormalData.resize(count);
+    size_t n = 0;
     int cur_frame, next_frame;
     float frac = 0.0f;
 
@@ -659,20 +740,29 @@ void QMDLRenderer::rebuildBuffer()
         auto &nv0 = this->_model->frames[next_frame].vertices[tri.vertices[0]];
         auto &nv1 = this->_model->frames[next_frame].vertices[tri.vertices[1]];
         auto &nv2 = this->_model->frames[next_frame].vertices[tri.vertices[2]];
-
+        
         std::array<QVector3D, 3> positions;
+        std::array<QVector3D, 3> normals;
         
         if (frac == 0.0f)
         {
             positions[0] = cv0.position;
             positions[1] = cv1.position;
             positions[2] = cv2.position;
+
+            normals[0] = cv0.normal;
+            normals[1] = cv1.normal;
+            normals[2] = cv2.normal;
         }
         else if (frac == 1.0f)
         {
             positions[0] = nv0.position;
             positions[1] = nv1.position;
             positions[2] = nv2.position;
+
+            normals[0] = nv0.normal;
+            normals[1] = nv1.normal;
+            normals[2] = nv2.normal;
         }
         else
         {
@@ -691,6 +781,22 @@ void QMDLRenderer::rebuildBuffer()
                 std::lerp(cv2.position[1], nv2.position[1], frac),
                 std::lerp(cv2.position[2], nv2.position[2], frac)
             };
+
+            normals[0] = {
+                std::lerp(cv0.normal[0], nv0.normal[0], frac),
+                std::lerp(cv0.normal[1], nv0.normal[1], frac),
+                std::lerp(cv0.normal[2], nv0.normal[2], frac)
+            };
+            normals[1] = {
+                std::lerp(cv1.normal[0], nv1.normal[0], frac),
+                std::lerp(cv1.normal[1], nv1.normal[1], frac),
+                std::lerp(cv1.normal[2], nv1.normal[2], frac)
+            };
+            normals[2] = {
+                std::lerp(cv2.normal[0], nv2.normal[0], frac),
+                std::lerp(cv2.normal[1], nv2.normal[1], frac),
+                std::lerp(cv2.normal[2], nv2.normal[2], frac)
+            };
         }
             
         auto &st0 = this->_model->texcoords[tri.texcoords[0]];
@@ -698,13 +804,25 @@ void QMDLRenderer::rebuildBuffer()
         auto &st2 = this->_model->texcoords[tri.texcoords[2]];
 
         {
-            auto &ov0 = _bufferData[n++];
-            auto &ov1 = _bufferData[n++];
-            auto &ov2 = _bufferData[n++];
+            auto &ov0 = _bufferData[n + 0];
+            auto &ov1 = _bufferData[n + 1];
+            auto &ov2 = _bufferData[n + 2];
             
             ov0.position = positions[0];
             ov1.position = positions[1];
             ov2.position = positions[2];
+            
+            auto &nv0 = _smoothNormalData[n + 0];
+            auto &nv1 = _smoothNormalData[n + 1];
+            auto &nv2 = _smoothNormalData[n + 2];
+
+            nv0 = normals[0];
+            nv1 = normals[1];
+            nv2 = normals[2];
+            
+            _flatNormalData[n + 0] =
+            _flatNormalData[n + 1] =
+            _flatNormalData[n + 2] = (nv0 + nv1 + nv2) / 3;
             
             ov0.texcoord = st0;
             ov1.texcoord = st1;
@@ -712,9 +830,9 @@ void QMDLRenderer::rebuildBuffer()
         }
 
         {
-            auto &ov0 = _pointData[pn++];
-            auto &ov1 = _pointData[pn++];
-            auto &ov2 = _pointData[pn++];
+            auto &ov0 = _pointData[n + 0];
+            auto &ov1 = _pointData[n + 1];
+            auto &ov2 = _pointData[n + 2];
             
             ov0.position = positions[0];
             ov1.position = positions[1];
@@ -722,21 +840,14 @@ void QMDLRenderer::rebuildBuffer()
             
             ov0.color = ov1.color = ov2.color = { 255, 255, 255, 127 };
         }
+
+        n += 3;
     }
 
-    glBindBuffer(GL_ARRAY_BUFFER, _buffer);
-
-    if (full_upload)
-        glBufferData(GL_ARRAY_BUFFER, sizeof(GPUVertexData) * count, _bufferData.data(), GL_DYNAMIC_DRAW);
-    else
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GPUVertexData) * count, _bufferData.data());
-
-    glBindBuffer(GL_ARRAY_BUFFER, _pointBuffer);
-
-    if (full_upload)
-        glBufferData(GL_ARRAY_BUFFER, sizeof(GPUPointData) * count, _pointData.data(), GL_DYNAMIC_DRAW);
-    else
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GPUPointData) * count, _pointData.data());
+    uploadToBuffer(_buffer, full_upload, _bufferData);
+    uploadToBuffer(_pointBuffer, full_upload, _pointData);
+    uploadToBuffer(_smoothNormalBuffer, full_upload, _smoothNormalData);
+    uploadToBuffer(_flatNormalBuffer, full_upload, _flatNormalData);
 }
 
 void QMDLRenderer::setModel(const ModelData *model)

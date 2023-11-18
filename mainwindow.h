@@ -2,11 +2,19 @@
 
 #include <QMainWindow>
 #include <QSettings>
+#include <QOpenGLDebugLogger>
 #include "modeldata.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+
+enum class RenderMode
+{
+    Wireframe,
+    Flat,
+    Textured
+};
 
 class MainWindow : public QMainWindow
 {
@@ -26,6 +34,12 @@ public:
     bool animationInterpolated() const;
     int animationStartFrame() const;
     int animationEndFrame() const;
+    RenderMode renderMode2D() const;
+    bool drawBackfaces2D() const;
+    bool smoothNormals2D() const;
+    RenderMode renderMode3D() const;
+    bool drawBackfaces3D() const;
+    bool smoothNormals3D() const;
 
     QSettings settings;
 

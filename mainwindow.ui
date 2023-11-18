@@ -1473,13 +1473,35 @@
     <property name="title">
      <string>Options</string>
     </property>
+    <widget class="QMenu" name="menu2D_View">
+     <property name="title">
+      <string>2D View</string>
+     </property>
+     <addaction name="actionWireframe"/>
+     <addaction name="actionFlat"/>
+     <addaction name="actionTextured"/>
+     <addaction name="separator"/>
+     <addaction name="actionDraw_Backfaces"/>
+     <addaction name="actionPer_Vertex_Normals"/>
+    </widget>
+    <widget class="QMenu" name="menu3D_View">
+     <property name="title">
+      <string>3D View</string>
+     </property>
+     <addaction name="actionWireframe_2"/>
+     <addaction name="actionFlat_2"/>
+     <addaction name="actionTextured_2"/>
+     <addaction name="separator"/>
+     <addaction name="actionDraw_Backfaces_2"/>
+     <addaction name="actionPer_Vertex_Normals_2"/>
+    </widget>
     <addaction name="actionVertice_Ticks"/>
     <addaction name="actionShow_Origin"/>
     <addaction name="actionShow_Grid"/>
     <addaction name="actionGround_Plane_Position"/>
     <addaction name="actionShow_Normals"/>
-    <addaction name="action2D_View"/>
-    <addaction name="action3D_View"/>
+    <addaction name="menu2D_View"/>
+    <addaction name="menu3D_View"/>
     <addaction name="separator"/>
     <addaction name="actionSync_Skin_Selection"/>
     <addaction name="separator"/>
@@ -1722,16 +1744,6 @@
     <string>Show Normals</string>
    </property>
   </action>
-  <action name="action2D_View">
-   <property name="text">
-    <string>2D View</string>
-   </property>
-  </action>
-  <action name="action3D_View">
-   <property name="text">
-    <string>3D View</string>
-   </property>
-  </action>
   <action name="actionSync_Skin_Selection">
    <property name="checkable">
     <bool>true</bool>
@@ -1793,6 +1805,101 @@
   <action name="actionCapture_RenderDoc_Frame">
    <property name="text">
     <string>Capture RenderDoc Frame</string>
+   </property>
+  </action>
+  <action name="actionWireframe">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Wireframe</string>
+   </property>
+  </action>
+  <action name="actionFlat">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Flat</string>
+   </property>
+  </action>
+  <action name="actionTextured">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Textured</string>
+   </property>
+  </action>
+  <action name="actionDraw_Backfaces">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Draw Backfaces</string>
+   </property>
+  </action>
+  <action name="actionPer_Vertex_Normals">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Per-Vertex Normals</string>
+   </property>
+  </action>
+  <action name="actionWireframe_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Wireframe</string>
+   </property>
+  </action>
+  <action name="actionFlat_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Flat</string>
+   </property>
+  </action>
+  <action name="actionTextured_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Textured</string>
+   </property>
+  </action>
+  <action name="actionDraw_Backfaces_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Draw Backfaces</string>
+   </property>
+  </action>
+  <action name="actionPer_Vertex_Normals_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Per-Vertex Normals</string>
    </property>
   </action>
  </widget>

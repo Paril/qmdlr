@@ -26,14 +26,16 @@ struct GPUPointData
 
 enum class QuadrantFocus
 {
-    None,
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
     Horizontal,
     Vertical,
-    Center
+    Center,
+
+    Quadrants = 4,
+    None = -1
 };
 
 enum class Orientation2D
@@ -44,6 +46,12 @@ enum class Orientation2D
 };
 
 struct QuadRect { int x, y, w, h; };
+
+struct ProgramShared
+{
+    GLuint program;
+    GLint projectionUniformLocation, modelviewUniformLocation;
+};
 
 class QMDLRenderer : public QOpenGLWidget
 {
@@ -79,26 +87,25 @@ private:
     QuadrantFocus getQuadrantFocus(QPoint xy);
 
     void clearQuadrant(QuadRect rect, QVector4D color);
-    void setupWireframe();
-    void setupTextured();
-    void drawModels(const Matrix4 &projection, bool is_2d);
+    void drawModels(const Matrix4 &projection, RenderMode mode, bool backfaces, bool smoothNormals, bool is_2d);
     void draw2D(Orientation2D orientation, QuadrantFocus quadrant);
     void draw3D(QuadrantFocus quadrant);
     
+    std::unique_ptr<QOpenGLDebugLogger> _logger;
     QElapsedTimer _animationTimer;
     QuadrantFocus _focusedQuadrant = QuadrantFocus::None;
     bool _dragging = false;
     QPoint _dragPos;
     Qt::MouseButton _dragButton;
     float _horizontalSplit, _verticalSplit;
-    GLuint _program;
-    GLint _positionAttributeLocation, _texcoordAttributeLocation, _colorAttributeLocation;
-    GLint _projectionUniformLocation, _modelviewUniformLocation;
-    GLuint _buffer, _pointBuffer, _axisBuffer, _gridBuffer;
+    ProgramShared _modelProgram, _simpleProgram;
+
+    GLuint _buffer, _pointBuffer, _smoothNormalBuffer, _flatNormalBuffer, _axisBuffer, _gridBuffer;
     GLuint _whiteTexture, _blackTexture, _modelTexture;
     size_t _gridSize;
     std::vector<GPUVertexData> _bufferData;
     std::vector<GPUPointData> _pointData;
+    std::vector<QVector3D> _smoothNormalData, _flatNormalData;
     GLuint _vao, _pointVao, _axisVao, _gridVao;
     const ModelData *_model = nullptr;
     float _2dZoom = 1.0f;

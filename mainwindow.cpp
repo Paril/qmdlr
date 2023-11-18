@@ -1,6 +1,19 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include <qopenglcontext.h>
+#include <QActionGroup>
+
+template<typename F>
+static void setupMenuRadioButtons(QObject *owner, std::initializer_list<QAction *> actions, F func)
+{
+	auto groupTool = new QActionGroup(owner);
+
+	for (auto &action : actions)
+	{
+		QObject::connect(action, &QAction::triggered, func);
+		groupTool->addAction(action);
+	}
+}
 
 MainWindow::MainWindow(QWidget *parent) :
 	QMainWindow(parent),
@@ -15,12 +28,26 @@ MainWindow::MainWindow(QWidget *parent) :
 	QObject::connect(this->ui->actionCapture_RenderDoc_Frame, &QAction::triggered, this->ui->openGLWidget, &QMDLRenderer::captureRenderDoc);
 
 	QObject::connect(this->ui->horizontalSlider, &QSlider::valueChanged, this, &MainWindow::frameChanged);
-	QObject::connect(this->ui->toolButton_18, &QToolButton::clicked, this, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepSub); });
-	QObject::connect(this->ui->toolButton_19, &QToolButton::clicked, this, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepAdd); });
+	QObject::connect(this->ui->toolButton_18, &QToolButton::clicked, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepSub); });
+	QObject::connect(this->ui->toolButton_19, &QToolButton::clicked, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepAdd); });
 
 	QObject::connect(this->ui->actionShow_Grid, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 	QObject::connect(this->ui->actionShow_Origin, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 	QObject::connect(this->ui->actionVertice_Ticks, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+
+	setupMenuRadioButtons(this, {
+		this->ui->actionWireframe, this->ui->actionFlat, this->ui->actionTextured
+	}, [this] () { this->ui->openGLWidget->update(); });
+	
+	QObject::connect(this->ui->actionDraw_Backfaces, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->ui->actionPer_Vertex_Normals, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+
+	setupMenuRadioButtons(this, {
+		this->ui->actionWireframe_2, this->ui->actionFlat_2, this->ui->actionTextured_2
+	}, [this] () { this->ui->openGLWidget->update(); });
+	
+	QObject::connect(this->ui->actionDraw_Backfaces_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->ui->actionPer_Vertex_Normals_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 	
 	QObject::connect(this->ui->spinBox, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
 	QObject::connect(this->ui->spinBox_2, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
@@ -76,6 +103,46 @@ int MainWindow::animationEndFrame() const
 	return this->ui->spinBox_3->value();
 }
 
+RenderMode MainWindow::renderMode2D() const
+{
+	if (this->ui->actionWireframe->isChecked())
+		return RenderMode::Wireframe;
+	else if (this->ui->actionFlat->isChecked())
+		return RenderMode::Flat;
+	else
+		return RenderMode::Textured;
+}
+
+bool MainWindow::drawBackfaces2D() const
+{
+	return this->ui->actionDraw_Backfaces->isChecked();
+}
+
+bool MainWindow::smoothNormals2D() const
+{
+	return this->ui->actionPer_Vertex_Normals->isChecked();
+}
+
+RenderMode MainWindow::renderMode3D() const
+{
+	if (this->ui->actionWireframe_2->isChecked())
+		return RenderMode::Wireframe;
+	else if (this->ui->actionFlat_2->isChecked())
+		return RenderMode::Flat;
+	else
+		return RenderMode::Textured;
+}
+
+bool MainWindow::drawBackfaces3D() const
+{
+	return this->ui->actionDraw_Backfaces_2->isChecked();
+}
+
+bool MainWindow::smoothNormals3D() const
+{
+	return this->ui->actionPer_Vertex_Normals_2->isChecked();
+}
+
 void MainWindow::animationChanged()
 {
 	this->ui->openGLWidget->resetAnimation();
@@ -87,6 +154,171 @@ void MainWindow::toggleAnimation()
 }
 
 #include <QFileDialog>
+
+constexpr QVector3D anorms[] = {
+	{-0.525731f, 0.000000f, 0.850651f}, 
+	{-0.442863f, 0.238856f, 0.864188f}, 
+	{-0.295242f, 0.000000f, 0.955423f}, 
+	{-0.309017f, 0.500000f, 0.809017f}, 
+	{-0.162460f, 0.262866f, 0.951056f}, 
+	{0.000000f, 0.000000f, 1.000000f}, 
+	{0.000000f, 0.850651f, 0.525731f}, 
+	{-0.147621f, 0.716567f, 0.681718f}, 
+	{0.147621f, 0.716567f, 0.681718f}, 
+	{0.000000f, 0.525731f, 0.850651f}, 
+	{0.309017f, 0.500000f, 0.809017f}, 
+	{0.525731f, 0.000000f, 0.850651f}, 
+	{0.295242f, 0.000000f, 0.955423f}, 
+	{0.442863f, 0.238856f, 0.864188f}, 
+	{0.162460f, 0.262866f, 0.951056f}, 
+	{-0.681718f, 0.147621f, 0.716567f}, 
+	{-0.809017f, 0.309017f, 0.500000f}, 
+	{-0.587785f, 0.425325f, 0.688191f}, 
+	{-0.850651f, 0.525731f, 0.000000f}, 
+	{-0.864188f, 0.442863f, 0.238856f}, 
+	{-0.716567f, 0.681718f, 0.147621f}, 
+	{-0.688191f, 0.587785f, 0.425325f}, 
+	{-0.500000f, 0.809017f, 0.309017f}, 
+	{-0.238856f, 0.864188f, 0.442863f}, 
+	{-0.425325f, 0.688191f, 0.587785f}, 
+	{-0.716567f, 0.681718f, -0.147621f}, 
+	{-0.500000f, 0.809017f, -0.309017f}, 
+	{-0.525731f, 0.850651f, 0.000000f}, 
+	{0.000000f, 0.850651f, -0.525731f}, 
+	{-0.238856f, 0.864188f, -0.442863f}, 
+	{0.000000f, 0.955423f, -0.295242f}, 
+	{-0.262866f, 0.951056f, -0.162460f}, 
+	{0.000000f, 1.000000f, 0.000000f}, 
+	{0.000000f, 0.955423f, 0.295242f}, 
+	{-0.262866f, 0.951056f, 0.162460f}, 
+	{0.238856f, 0.864188f, 0.442863f}, 
+	{0.262866f, 0.951056f, 0.162460f}, 
+	{0.500000f, 0.809017f, 0.309017f}, 
+	{0.238856f, 0.864188f, -0.442863f}, 
+	{0.262866f, 0.951056f, -0.162460f}, 
+	{0.500000f, 0.809017f, -0.309017f}, 
+	{0.850651f, 0.525731f, 0.000000f}, 
+	{0.716567f, 0.681718f, 0.147621f}, 
+	{0.716567f, 0.681718f, -0.147621f}, 
+	{0.525731f, 0.850651f, 0.000000f}, 
+	{0.425325f, 0.688191f, 0.587785f}, 
+	{0.864188f, 0.442863f, 0.238856f}, 
+	{0.688191f, 0.587785f, 0.425325f}, 
+	{0.809017f, 0.309017f, 0.500000f}, 
+	{0.681718f, 0.147621f, 0.716567f}, 
+	{0.587785f, 0.425325f, 0.688191f}, 
+	{0.955423f, 0.295242f, 0.000000f}, 
+	{1.000000f, 0.000000f, 0.000000f}, 
+	{0.951056f, 0.162460f, 0.262866f}, 
+	{0.850651f, -0.525731f, 0.000000f}, 
+	{0.955423f, -0.295242f, 0.000000f}, 
+	{0.864188f, -0.442863f, 0.238856f}, 
+	{0.951056f, -0.162460f, 0.262866f}, 
+	{0.809017f, -0.309017f, 0.500000f}, 
+	{0.681718f, -0.147621f, 0.716567f}, 
+	{0.850651f, 0.000000f, 0.525731f}, 
+	{0.864188f, 0.442863f, -0.238856f}, 
+	{0.809017f, 0.309017f, -0.500000f}, 
+	{0.951056f, 0.162460f, -0.262866f}, 
+	{0.525731f, 0.000000f, -0.850651f}, 
+	{0.681718f, 0.147621f, -0.716567f}, 
+	{0.681718f, -0.147621f, -0.716567f}, 
+	{0.850651f, 0.000000f, -0.525731f}, 
+	{0.809017f, -0.309017f, -0.500000f}, 
+	{0.864188f, -0.442863f, -0.238856f}, 
+	{0.951056f, -0.162460f, -0.262866f}, 
+	{0.147621f, 0.716567f, -0.681718f}, 
+	{0.309017f, 0.500000f, -0.809017f}, 
+	{0.425325f, 0.688191f, -0.587785f}, 
+	{0.442863f, 0.238856f, -0.864188f}, 
+	{0.587785f, 0.425325f, -0.688191f}, 
+	{0.688191f, 0.587785f, -0.425325f}, 
+	{-0.147621f, 0.716567f, -0.681718f}, 
+	{-0.309017f, 0.500000f, -0.809017f}, 
+	{0.000000f, 0.525731f, -0.850651f}, 
+	{-0.525731f, 0.000000f, -0.850651f}, 
+	{-0.442863f, 0.238856f, -0.864188f}, 
+	{-0.295242f, 0.000000f, -0.955423f}, 
+	{-0.162460f, 0.262866f, -0.951056f}, 
+	{0.000000f, 0.000000f, -1.000000f}, 
+	{0.295242f, 0.000000f, -0.955423f}, 
+	{0.162460f, 0.262866f, -0.951056f}, 
+	{-0.442863f, -0.238856f, -0.864188f}, 
+	{-0.309017f, -0.500000f, -0.809017f}, 
+	{-0.162460f, -0.262866f, -0.951056f}, 
+	{0.000000f, -0.850651f, -0.525731f}, 
+	{-0.147621f, -0.716567f, -0.681718f}, 
+	{0.147621f, -0.716567f, -0.681718f}, 
+	{0.000000f, -0.525731f, -0.850651f}, 
+	{0.309017f, -0.500000f, -0.809017f}, 
+	{0.442863f, -0.238856f, -0.864188f}, 
+	{0.162460f, -0.262866f, -0.951056f}, 
+	{0.238856f, -0.864188f, -0.442863f}, 
+	{0.500000f, -0.809017f, -0.309017f}, 
+	{0.425325f, -0.688191f, -0.587785f}, 
+	{0.716567f, -0.681718f, -0.147621f}, 
+	{0.688191f, -0.587785f, -0.425325f}, 
+	{0.587785f, -0.425325f, -0.688191f}, 
+	{0.000000f, -0.955423f, -0.295242f}, 
+	{0.000000f, -1.000000f, 0.000000f}, 
+	{0.262866f, -0.951056f, -0.162460f}, 
+	{0.000000f, -0.850651f, 0.525731f}, 
+	{0.000000f, -0.955423f, 0.295242f}, 
+	{0.238856f, -0.864188f, 0.442863f}, 
+	{0.262866f, -0.951056f, 0.162460f}, 
+	{0.500000f, -0.809017f, 0.309017f}, 
+	{0.716567f, -0.681718f, 0.147621f}, 
+	{0.525731f, -0.850651f, 0.000000f}, 
+	{-0.238856f, -0.864188f, -0.442863f}, 
+	{-0.500000f, -0.809017f, -0.309017f}, 
+	{-0.262866f, -0.951056f, -0.162460f}, 
+	{-0.850651f, -0.525731f, 0.000000f}, 
+	{-0.716567f, -0.681718f, -0.147621f}, 
+	{-0.716567f, -0.681718f, 0.147621f}, 
+	{-0.525731f, -0.850651f, 0.000000f}, 
+	{-0.500000f, -0.809017f, 0.309017f}, 
+	{-0.238856f, -0.864188f, 0.442863f}, 
+	{-0.262866f, -0.951056f, 0.162460f}, 
+	{-0.864188f, -0.442863f, 0.238856f}, 
+	{-0.809017f, -0.309017f, 0.500000f}, 
+	{-0.688191f, -0.587785f, 0.425325f}, 
+	{-0.681718f, -0.147621f, 0.716567f}, 
+	{-0.442863f, -0.238856f, 0.864188f}, 
+	{-0.587785f, -0.425325f, 0.688191f}, 
+	{-0.309017f, -0.500000f, 0.809017f}, 
+	{-0.147621f, -0.716567f, 0.681718f}, 
+	{-0.425325f, -0.688191f, 0.587785f}, 
+	{-0.162460f, -0.262866f, 0.951056f}, 
+	{0.442863f, -0.238856f, 0.864188f}, 
+	{0.162460f, -0.262866f, 0.951056f}, 
+	{0.309017f, -0.500000f, 0.809017f}, 
+	{0.147621f, -0.716567f, 0.681718f}, 
+	{0.000000f, -0.525731f, 0.850651f}, 
+	{0.425325f, -0.688191f, 0.587785f}, 
+	{0.587785f, -0.425325f, 0.688191f}, 
+	{0.688191f, -0.587785f, 0.425325f}, 
+	{-0.955423f, 0.295242f, 0.000000f}, 
+	{-0.951056f, 0.162460f, 0.262866f}, 
+	{-1.000000f, 0.000000f, 0.000000f}, 
+	{-0.850651f, 0.000000f, 0.525731f}, 
+	{-0.955423f, -0.295242f, 0.000000f}, 
+	{-0.951056f, -0.162460f, 0.262866f}, 
+	{-0.864188f, 0.442863f, -0.238856f}, 
+	{-0.951056f, 0.162460f, -0.262866f}, 
+	{-0.809017f, 0.309017f, -0.500000f}, 
+	{-0.864188f, -0.442863f, -0.238856f}, 
+	{-0.951056f, -0.162460f, -0.262866f}, 
+	{-0.809017f, -0.309017f, -0.500000f}, 
+	{-0.681718f, 0.147621f, -0.716567f}, 
+	{-0.681718f, -0.147621f, -0.716567f}, 
+	{-0.850651f, 0.000000f, -0.525731f}, 
+	{-0.688191f, 0.587785f, -0.425325f}, 
+	{-0.587785f, 0.425325f, -0.688191f}, 
+	{-0.425325f, 0.688191f, -0.587785f}, 
+	{-0.425325f, -0.688191f, -0.587785f}, 
+	{-0.587785f, -0.425325f, -0.688191f}, 
+	{-0.688191f, -0.587785f, -0.425325f}
+};
 
 /*
 ========================================================================
@@ -290,6 +522,7 @@ ModelData LoadMD2(QString filename)
 				(v.v[1] * frame_header.scale[1]) + frame_header.translate[1],
 				(v.v[2] * frame_header.scale[2]) + frame_header.translate[2]
 			};
+			vert.normal = anorms[v.lightnormalindex];
 		}
 	}
 
@@ -366,10 +599,11 @@ void MainWindow::loadModel(QString path)
     activeModel = LoadMD2(path);
 	this->ui->openGLWidget->setModel(&activeModel);
 
-	this->ui->horizontalSlider->setMaximum(activeModel.frames.size() - 1);
-	
-	this->ui->spinBox_2->setMaximum(activeModel.frames.size() - 1);
-	this->ui->spinBox_3->setMaximum(activeModel.frames.size() - 1);
+	int maxFrames = (int) (activeModel.frames.size() - 1);
+
+	this->ui->horizontalSlider->setMaximum(maxFrames);
+	this->ui->spinBox_2->setMaximum(maxFrames);
+	this->ui->spinBox_3->setMaximum(maxFrames);
 
 	frameChanged();
 }
