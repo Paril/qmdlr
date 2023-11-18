@@ -2,18 +2,88 @@
 #include "./ui_mainwindow.h"
 #include <qopenglcontext.h>
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
-    , ui(new Ui::MainWindow)
+MainWindow::MainWindow(QWidget *parent) :
+	QMainWindow(parent),
+    ui(new Ui::MainWindow),
+	settings(QSettings::IniFormat, QSettings::UserScope, "Altered Softworks", "QTMDL")
 {
+	_instance = this;
+
     ui->setupUi(this);
 
     QObject::connect(this->ui->actionOpen, &QAction::triggered, this, &MainWindow::openClicked);
+	QObject::connect(this->ui->actionCapture_RenderDoc_Frame, &QAction::triggered, this->ui->openGLWidget, &QMDLRenderer::captureRenderDoc);
+
+	QObject::connect(this->ui->horizontalSlider, &QSlider::valueChanged, this, &MainWindow::frameChanged);
+	QObject::connect(this->ui->toolButton_18, &QToolButton::clicked, this, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepSub); });
+	QObject::connect(this->ui->toolButton_19, &QToolButton::clicked, this, [this] () { this->ui->horizontalSlider->triggerAction(QAbstractSlider::SliderAction::SliderSingleStepAdd); });
+
+	QObject::connect(this->ui->actionShow_Grid, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->ui->actionShow_Origin, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->ui->actionVertice_Ticks, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	
+	QObject::connect(this->ui->spinBox, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
+	QObject::connect(this->ui->spinBox_2, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
+	QObject::connect(this->ui->spinBox_3, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
+	QObject::connect(this->ui->toolButton_14, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
+	QObject::connect(this->ui->toolButton_15, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+/*static*/ MainWindow *MainWindow::_instance = nullptr;
+
+bool MainWindow::showGrid() const
+{
+	return this->ui->actionShow_Grid->isChecked();
+}
+
+bool MainWindow::showOrigin() const
+{
+	return this->ui->actionShow_Origin->isChecked();
+}
+
+bool MainWindow::vertexTicks() const
+{
+	return this->ui->actionVertice_Ticks->isChecked();
+}
+
+int MainWindow::activeFrame() const
+{
+	return this->ui->horizontalSlider->value();
+}
+
+int MainWindow::animationFrameRate() const
+{
+	return this->ui->spinBox->value();
+}
+
+bool MainWindow::animationInterpolated() const
+{
+	return this->ui->toolButton_15->isChecked();
+}
+
+int MainWindow::animationStartFrame() const
+{
+	return this->ui->spinBox_2->value();
+}
+
+int MainWindow::animationEndFrame() const
+{
+	return this->ui->spinBox_3->value();
+}
+
+void MainWindow::animationChanged()
+{
+	this->ui->openGLWidget->resetAnimation();
+}
+
+void MainWindow::toggleAnimation()
+{
+	this->ui->openGLWidget->setAnimated(this->ui->toolButton_14->isChecked());
 }
 
 #include <QFileDialog>
@@ -295,11 +365,28 @@ void MainWindow::loadModel(QString path)
 {
     activeModel = LoadMD2(path);
 	this->ui->openGLWidget->setModel(&activeModel);
+
+	this->ui->horizontalSlider->setMaximum(activeModel.frames.size() - 1);
+	
+	this->ui->spinBox_2->setMaximum(activeModel.frames.size() - 1);
+	this->ui->spinBox_3->setMaximum(activeModel.frames.size() - 1);
+
+	frameChanged();
 }
 
-void MainWindow::openClicked(bool toggled)
+void MainWindow::openClicked()
 {
     QFileDialog dlg(this, "Load MD2", "", "*.md2");
     if (dlg.exec() == QFileDialog::Accepted)
 		loadModel(dlg.selectedFiles()[0]);
+}
+
+void MainWindow::frameChanged()
+{
+	this->ui->openGLWidget->update();
+
+	this->ui->label_5->setText(QString::asprintf("%i", this->activeFrame()));
+
+	if (activeModel.frames.size())
+		this->ui->label_frameName->setText(QString::fromStdString(activeModel.frames[this->activeFrame()].name));
 }

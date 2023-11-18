@@ -4,6 +4,7 @@
 #include <QLocale>
 #include <QTranslator>
 #include <QSurfaceFormat.h>
+#include "glad.h"
 
 int main(int argc, char *argv[])
 {
@@ -13,7 +14,7 @@ int main(int argc, char *argv[])
     QSurfaceFormat format;
     format.setDepthBufferSize(24);
     format.setVersion(3, 3);
-    format.setProfile(QSurfaceFormat::CompatibilityProfile);
+    format.setProfile(QSurfaceFormat::CoreProfile);
     QSurfaceFormat::setDefaultFormat(format);
 
     QTranslator translator;
@@ -25,11 +26,13 @@ int main(int argc, char *argv[])
             break;
         }
     }
+
     MainWindow w;
 
     w.show();
 
     if (argc >= 2)
         w.loadModel(argv[1]);
+
     return a.exec();
 }
