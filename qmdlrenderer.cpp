@@ -257,8 +257,8 @@ void QMDLRenderer::resizeGL(int w, int h)
 
 QuadRect QMDLRenderer::getQuadrantRect(QuadrantFocus quadrant)
 {
-    int w = this->width();
-    int h = this->height();
+    int w = width() * devicePixelRatio();
+    int h = height() * devicePixelRatio();
         
     // calculate the top-left quadrant size, which is used as the basis
     int qw = (w * _horizontalSplit) - 1;
@@ -330,7 +330,7 @@ void QMDLRenderer::mousePressEvent(QMouseEvent *e)
 {
     _dragging = true;
     _dragButton = e->button();
-    _dragPos = _downPos = mapFromGlobal(QCursor::pos());
+    _dragPos = _downPos = mapFromGlobal(QCursor::pos()) * devicePixelRatio();
     _dragWorldPos = mouseToWorld(_dragPos);
     _dragDelta = {};
     mouseMoveEvent(e);
@@ -402,7 +402,7 @@ void QMDLRenderer::focusLost()
 {
     QMouseEvent ev {
         QEvent::Type::MouseButtonRelease,
-        mapFromGlobal(QCursor::pos()),
+        mapFromGlobal(QCursor::pos()) * devicePixelRatio(),
         QCursor::pos(),
         Qt::MouseButton::NoButton,
         {},
@@ -413,7 +413,7 @@ void QMDLRenderer::focusLost()
 
 void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
 {
-    auto pos = mapFromGlobal(QCursor::pos());
+    auto pos = mapFromGlobal(QCursor::pos()) * devicePixelRatio();
     auto world = mouseToWorld(pos);
 
     MainWindow::instance().setCurrentWorldPosition(world);
@@ -435,9 +435,9 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
             bool adjust_horz = _focusedQuadrant == QuadrantFocus::Vertical || _focusedQuadrant == QuadrantFocus::Center;
                 
             if (adjust_horz)
-                _horizontalSplit = (float) pos.x() / width();
+                _horizontalSplit = (float) pos.x() / (width() * devicePixelRatio());
             if (adjust_vert)
-                _verticalSplit = (float) pos.y() / height();
+                _verticalSplit = (float) pos.y() / (height() * devicePixelRatio());
         }
         else if (MainWindow::instance().selectedTool() == EditorTool::Pan)
         {
@@ -471,7 +471,7 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
         update();
         
         if (MainWindow::instance().selectedTool() == EditorTool::Pan)
-            _dragPos = { Wrap(pos.x(), 0, width() - 1), Wrap(pos.y(), 0, height() - 1) };
+            _dragPos = { Wrap(pos.x(), 0, static_cast<int>(width() * devicePixelRatio()) - 1), Wrap(pos.y(), 0, static_cast<int>(height() * devicePixelRatio()) - 1) };
         else if (_focusedQuadrant != QuadrantFocus::None)
         {
             QuadRect rect = getQuadrantRect(_focusedQuadrant);
@@ -479,7 +479,7 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
         }
 
         if (_dragPos != pos)
-            QCursor::setPos(mapToGlobal(_dragPos));
+            QCursor::setPos(mapToGlobal(_dragPos / devicePixelRatio()));
         
         if (_focusedQuadrant == QuadrantFocus::Center)
             setCursor(Qt::SizeAllCursor);
@@ -497,8 +497,8 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
 
     _focusedQuadrant = getQuadrantFocus(pos);
         
-    int w = this->width();
-    int h = this->height();
+    int w = this->width() * devicePixelRatio();
+    int h = this->height() * devicePixelRatio();
         
     int quadrant_w = (w / 2) - 1;
     int quadrant_h = (h / 2) - 1;
@@ -530,7 +530,7 @@ void QMDLRenderer::leaveEvent(QEvent *event)
 void QMDLRenderer::clearQuadrant(QuadRect rect, QVector4D color)
 {
     // flip Y to match GL orientation
-    int ry = (height() - rect.y) - rect.h;
+    int ry = ((height() * devicePixelRatio()) - rect.y) - rect.h;
 
     glViewport(rect.x, ry, rect.w, rect.h);
     glScissor(rect.x, ry, rect.w, rect.h);
@@ -733,7 +733,7 @@ void QMDLRenderer::paintGL()
     if (_doRenderDoc && rdoc_api) rdoc_api->StartFrameCapture(NULL, NULL);
 #endif
 
-    clearQuadrant({ 0, 0, width(), height() }, { 0, 0, 0, 255 });
+    clearQuadrant({ 0, 0, static_cast<int>(width() * devicePixelRatio()), static_cast<int>(height() * devicePixelRatio()) }, { 0, 0, 0, 255 });
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
