@@ -530,10 +530,10 @@ void QMDLRenderer::leaveEvent(QEvent *event)
 void QMDLRenderer::clearQuadrant(QuadRect rect, QVector4D color)
 {
     // flip Y to match GL orientation
-    int rw = (height() - rect.y) - rect.h;
+    int ry = (height() - rect.y) - rect.h;
 
-    glViewport(rect.x, rw, rect.w, rect.h);
-    glScissor(rect.x, rw, rect.w, rect.h);
+    glViewport(rect.x, ry, rect.w, rect.h);
+    glScissor(rect.x, ry, rect.w, rect.h);
     glClearColor(color[0], color[1], color[2], color[3]);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
@@ -703,34 +703,25 @@ QVector3D QMDLRenderer::mouseToWorld(QPoint pos)
     if (_focusedQuadrant == QuadrantFocus::None ||
         _focusedQuadrant == QuadrantFocus::Vertical ||
         _focusedQuadrant == QuadrantFocus::Horizontal ||
-        _focusedQuadrant == QuadrantFocus::Center ||
-        _focusedQuadrant == QuadrantFocus::TopRight)
+        _focusedQuadrant == QuadrantFocus::Center)
         return {};
 
     auto r = getQuadrantRect(_focusedQuadrant);
     Matrix4 projection, modelview;
     getQuadrantMatrices(_focusedQuadrant, projection, modelview);
 
-    QVector3D result = QVector3D(pos).unproject(modelview, projection, { r.x, r.y, r.w, r.h });
-    
-    if (_focusedQuadrant == QuadrantFocus::TopLeft)
-    {
-        result.setZ(0);
-        // FIXME: ????
-        result.setX(-result.x() + _2dOffset.y() * 2);
-    }
-    else
-    {
-        // FIXME: ????
-        result.setZ(-(result.z() + _2dOffset.z() * 2));
+    // put pos into local quadrant space
+    pos.setX(pos.x() - r.x);
+    pos.setY(pos.y() - r.y);
+    // flip Y to match GL orientation
+    pos.setY(r.h - pos.y());
 
-        if (_focusedQuadrant == QuadrantFocus::BottomLeft)
-            result.setX(0);
-        else if (_focusedQuadrant == QuadrantFocus::BottomRight)
-            result.setY(0);
-    }
+    QVector3D position(pos);
 
-    return result;
+    if (_focusedQuadrant == QuadrantFocus::TopRight)
+        position.setZ(1.0f);
+
+    return position.unproject(modelview, projection, { 0, 0, r.w, r.h });
 }
     
 void QMDLRenderer::paintGL()
@@ -1012,8 +1003,6 @@ void QMDLRenderer::rebuildBuffer()
 
         n += 3;
     }
-
-    _pointData[0].position = _dragWorldPos;
 
     uploadToBuffer(_buffer, full_upload, _bufferData);
     uploadToBuffer(_pointBuffer, full_upload, _pointData);
