@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
+# Qt6 requires 3.16, see: https://doc.qt.io/qt-6/cmake-get-started.html
 
 project(qtmdl VERSION 0.1 LANGUAGES C CXX)
 
@@ -62,9 +63,22 @@ endif()
 
 target_link_libraries(qtmdl PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::OpenGL Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
 
+file(GLOB_RECURSE SHADER_SOURCE_FILES "${CMAKE_SOURCE_DIR}/res/shaders/*")
+
+add_custom_command(
+        TARGET qtmdl POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/res/shaders
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_SOURCE_FILES} $<TARGET_FILE_DIR:qtmdl>/res/shaders
+)
+
 if (WIN32)
     add_custom_command(
         TARGET qtmdl POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::Core> $<TARGET_FILE_DIR:qtmdl>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::Widgets> $<TARGET_FILE_DIR:qtmdl>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::Gui> $<TARGET_FILE_DIR:qtmdl>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::OpenGLWidgets> $<TARGET_FILE_DIR:qtmdl>
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:qtmdl>/platforms
         COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:Qt6::QWindowsIntegrationPlugin> $<TARGET_FILE_DIR:qtmdl>/platforms
     )
 endif ()
