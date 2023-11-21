@@ -954,8 +954,14 @@
                   <property name="autoFillBackground">
                    <bool>false</bool>
                   </property>
+                  <property name="styleSheet">
+                   <string notr="true">color: rgb(212, 0, 0);</string>
+                  </property>
                   <property name="text">
-                   <string>0</string>
+                   <string notr="true">0</string>
+                  </property>
+                  <property name="textFormat">
+                   <enum>Qt::AutoText</enum>
                   </property>
                   <property name="scaledContents">
                    <bool>false</bool>
@@ -979,6 +985,9 @@
                   </property>
                   <property name="alignment">
                    <set>Qt::AlignCenter</set>
+                  </property>
+                  <property name="textInteractionFlags">
+                   <set>Qt::LinksAccessibleByMouse|Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
                   </property>
                  </widget>
                 </item>
@@ -1101,185 +1110,68 @@
               </widget>
              </item>
              <item>
-              <widget class="QPlainTextEdit" name="plainTextEdit">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="minimumSize">
-                <size>
-                 <width>48</width>
-                 <height>0</height>
-                </size>
-               </property>
-               <property name="maximumSize">
-                <size>
-                 <width>48</width>
-                 <height>16777215</height>
-                </size>
-               </property>
-               <property name="mouseTracking">
-                <bool>false</bool>
-               </property>
-               <property name="autoFillBackground">
-                <bool>false</bool>
-               </property>
-               <property name="frameShape">
-                <enum>QFrame::WinPanel</enum>
-               </property>
-               <property name="frameShadow">
-                <enum>QFrame::Sunken</enum>
-               </property>
-               <property name="verticalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
-               </property>
-               <property name="horizontalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
-               </property>
-               <property name="sizeAdjustPolicy">
-                <enum>QAbstractScrollArea::AdjustIgnored</enum>
-               </property>
-               <property name="undoRedoEnabled">
-                <bool>false</bool>
-               </property>
-               <property name="lineWrapMode">
-                <enum>QPlainTextEdit::NoWrap</enum>
-               </property>
-               <property name="readOnly">
+              <widget class="QDoubleSpinBox" name="doubleSpinBox">
+               <property name="frame">
                 <bool>true</bool>
                </property>
-               <property name="plainText">
-                <string notr="true">0.00</string>
+               <property name="buttonSymbols">
+                <enum>QAbstractSpinBox::NoButtons</enum>
                </property>
-               <property name="textInteractionFlags">
-                <set>Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
+               <property name="correctionMode">
+                <enum>QAbstractSpinBox::CorrectToNearestValue</enum>
                </property>
-               <property name="centerOnScroll">
-                <bool>true</bool>
+               <property name="decimals">
+                <number>4</number>
+               </property>
+               <property name="minimum">
+                <double>-32767.000000000000000</double>
+               </property>
+               <property name="maximum">
+                <double>32767.000000000000000</double>
                </property>
               </widget>
              </item>
              <item>
-              <widget class="QPlainTextEdit" name="plainTextEdit_2">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="minimumSize">
-                <size>
-                 <width>48</width>
-                 <height>0</height>
-                </size>
-               </property>
-               <property name="maximumSize">
-                <size>
-                 <width>48</width>
-                 <height>16777215</height>
-                </size>
-               </property>
-               <property name="mouseTracking">
-                <bool>false</bool>
-               </property>
-               <property name="autoFillBackground">
-                <bool>false</bool>
-               </property>
-               <property name="frameShape">
-                <enum>QFrame::WinPanel</enum>
-               </property>
-               <property name="frameShadow">
-                <enum>QFrame::Sunken</enum>
-               </property>
-               <property name="verticalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
-               </property>
-               <property name="horizontalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
-               </property>
-               <property name="sizeAdjustPolicy">
-                <enum>QAbstractScrollArea::AdjustIgnored</enum>
-               </property>
-               <property name="undoRedoEnabled">
-                <bool>false</bool>
-               </property>
-               <property name="lineWrapMode">
-                <enum>QPlainTextEdit::NoWrap</enum>
-               </property>
-               <property name="readOnly">
+              <widget class="QDoubleSpinBox" name="doubleSpinBox_2">
+               <property name="frame">
                 <bool>true</bool>
                </property>
-               <property name="plainText">
-                <string notr="true">0.00</string>
+               <property name="buttonSymbols">
+                <enum>QAbstractSpinBox::NoButtons</enum>
                </property>
-               <property name="textInteractionFlags">
-                <set>Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
+               <property name="correctionMode">
+                <enum>QAbstractSpinBox::CorrectToNearestValue</enum>
                </property>
-               <property name="centerOnScroll">
-                <bool>true</bool>
+               <property name="decimals">
+                <number>4</number>
+               </property>
+               <property name="minimum">
+                <double>-32767.000000000000000</double>
+               </property>
+               <property name="maximum">
+                <double>32767.000000000000000</double>
                </property>
               </widget>
              </item>
              <item>
-              <widget class="QPlainTextEdit" name="plainTextEdit_3">
-               <property name="sizePolicy">
-                <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-                 <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
-                </sizepolicy>
-               </property>
-               <property name="minimumSize">
-                <size>
-                 <width>48</width>
-                 <height>0</height>
-                </size>
-               </property>
-               <property name="maximumSize">
-                <size>
-                 <width>48</width>
-                 <height>16777215</height>
-                </size>
-               </property>
-               <property name="mouseTracking">
-                <bool>false</bool>
-               </property>
-               <property name="autoFillBackground">
-                <bool>false</bool>
-               </property>
-               <property name="frameShape">
-                <enum>QFrame::WinPanel</enum>
-               </property>
-               <property name="frameShadow">
-                <enum>QFrame::Sunken</enum>
-               </property>
-               <property name="verticalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
-               </property>
-               <property name="horizontalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
-               </property>
-               <property name="sizeAdjustPolicy">
-                <enum>QAbstractScrollArea::AdjustIgnored</enum>
-               </property>
-               <property name="undoRedoEnabled">
-                <bool>false</bool>
-               </property>
-               <property name="lineWrapMode">
-                <enum>QPlainTextEdit::NoWrap</enum>
-               </property>
-               <property name="readOnly">
+              <widget class="QDoubleSpinBox" name="doubleSpinBox_3">
+               <property name="frame">
                 <bool>true</bool>
                </property>
-               <property name="plainText">
-                <string notr="true">0.00</string>
+               <property name="buttonSymbols">
+                <enum>QAbstractSpinBox::NoButtons</enum>
                </property>
-               <property name="textInteractionFlags">
-                <set>Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
+               <property name="correctionMode">
+                <enum>QAbstractSpinBox::CorrectToNearestValue</enum>
                </property>
-               <property name="centerOnScroll">
-                <bool>true</bool>
+               <property name="decimals">
+                <number>4</number>
+               </property>
+               <property name="minimum">
+                <double>-32767.000000000000000</double>
+               </property>
+               <property name="maximum">
+                <double>32767.000000000000000</double>
                </property>
               </widget>
              </item>
@@ -1342,12 +1234,12 @@
               </widget>
              </item>
             </layout>
-            <zorder>plainTextEdit</zorder>
-            <zorder>plainTextEdit_2</zorder>
             <zorder>plainTextEdit_4</zorder>
-            <zorder>plainTextEdit_3</zorder>
             <zorder>toolButton_4</zorder>
             <zorder>toolButton_5</zorder>
+            <zorder>doubleSpinBox</zorder>
+            <zorder>doubleSpinBox_2</zorder>
+            <zorder>doubleSpinBox_3</zorder>
            </widget>
           </item>
           <item>
@@ -1367,7 +1259,7 @@
            <widget class="QWidget" name="widget_4" native="true">
             <layout class="QHBoxLayout" name="horizontalLayout_2">
              <property name="spacing">
-              <number>0</number>
+              <number>8</number>
              </property>
              <property name="leftMargin">
               <number>0</number>
@@ -1394,6 +1286,9 @@
                 <string>Pan Views</string>
                </property>
                <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="checked">
                 <bool>true</bool>
                </property>
               </widget>
@@ -1483,6 +1378,7 @@
      <addaction name="separator"/>
      <addaction name="actionDraw_Backfaces"/>
      <addaction name="actionPer_Vertex_Normals"/>
+     <addaction name="actionShading"/>
     </widget>
     <widget class="QMenu" name="menu3D_View">
      <property name="title">
@@ -1494,6 +1390,7 @@
      <addaction name="separator"/>
      <addaction name="actionDraw_Backfaces_2"/>
      <addaction name="actionPer_Vertex_Normals_2"/>
+     <addaction name="actionShading_2"/>
     </widget>
     <addaction name="actionVertice_Ticks"/>
     <addaction name="actionShow_Origin"/>
@@ -1900,6 +1797,28 @@
    </property>
    <property name="text">
     <string>Per-Vertex Normals</string>
+   </property>
+  </action>
+  <action name="actionShading">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Shading</string>
+   </property>
+  </action>
+  <action name="actionShading_2">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Shading</string>
    </property>
   </action>
  </widget>

@@ -2,6 +2,7 @@
 #include "./ui_mainwindow.h"
 #include <qopenglcontext.h>
 #include <QActionGroup>
+#include <QButtonGroup>
 
 template<typename F>
 static void setupMenuRadioButtons(QObject *owner, std::initializer_list<QAction *> actions, F func)
@@ -12,6 +13,18 @@ static void setupMenuRadioButtons(QObject *owner, std::initializer_list<QAction 
 	{
 		QObject::connect(action, &QAction::triggered, func);
 		groupTool->addAction(action);
+	}
+}
+
+template<typename F>
+static void setupGroupedButtons(QObject *owner, std::initializer_list<QAbstractButton *> buttons, F func)
+{
+	auto groupTool = new QButtonGroup(owner);
+
+	for (auto &button : buttons)
+	{
+		QObject::connect(button, &QAbstractButton::toggled, func);
+		groupTool->addButton(button);
 	}
 }
 
@@ -41,6 +54,7 @@ MainWindow::MainWindow(QWidget *parent) :
 	
 	QObject::connect(this->ui->actionDraw_Backfaces, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 	QObject::connect(this->ui->actionPer_Vertex_Normals, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->ui->actionShading, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 
 	setupMenuRadioButtons(this, {
 		this->ui->actionWireframe_2, this->ui->actionFlat_2, this->ui->actionTextured_2
@@ -48,12 +62,23 @@ MainWindow::MainWindow(QWidget *parent) :
 	
 	QObject::connect(this->ui->actionDraw_Backfaces_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 	QObject::connect(this->ui->actionPer_Vertex_Normals_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
+	QObject::connect(this->ui->actionShading_2, &QAction::toggled, this->ui->openGLWidget, qOverload<>(&QWidget::update));
 	
 	QObject::connect(this->ui->spinBox, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
 	QObject::connect(this->ui->spinBox_2, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
 	QObject::connect(this->ui->spinBox_3, &QSpinBox::valueChanged, this, &MainWindow::animationChanged);
 	QObject::connect(this->ui->toolButton_14, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
 	QObject::connect(this->ui->toolButton_15, &QToolButton::clicked, this, &MainWindow::toggleAnimation);
+
+	setupGroupedButtons(this, {
+		this->ui->toolButton_7, this->ui->toolButton_8, this->ui->toolButton_9,
+		this->ui->toolButton_10, this->ui->toolButton_6, this->ui->toolButton_20, this->ui->toolButton_21
+	}, [this] () { });
+
+	QObject::connect(qApp, &QGuiApplication::applicationStateChanged, this, [this] (Qt::ApplicationState state) {
+		if (state != Qt::ApplicationState::ApplicationActive)
+			this->ui->openGLWidget->focusLost();
+	});
 }
 
 MainWindow::~MainWindow()
@@ -103,44 +128,50 @@ int MainWindow::animationEndFrame() const
 	return this->ui->spinBox_3->value();
 }
 
-RenderMode MainWindow::renderMode2D() const
+RenderParameters MainWindow::getRenderParameters(bool is_2d) const
 {
-	if (this->ui->actionWireframe->isChecked())
-		return RenderMode::Wireframe;
-	else if (this->ui->actionFlat->isChecked())
-		return RenderMode::Flat;
+	RenderMode mode;
+
+	if ((is_2d ? this->ui->actionWireframe : this->ui->actionWireframe_2)->isChecked())
+		mode = RenderMode::Wireframe;
+	else if ((is_2d ? this->ui->actionFlat : this->ui->actionFlat_2)->isChecked())
+		mode = RenderMode::Flat;
 	else
-		return RenderMode::Textured;
+		mode = RenderMode::Textured;
+
+	return {
+		mode,
+		(is_2d ? this->ui->actionDraw_Backfaces : this->ui->actionDraw_Backfaces_2)->isChecked(),
+		(is_2d ? this->ui->actionPer_Vertex_Normals : this->ui->actionPer_Vertex_Normals_2)->isChecked(),
+		(is_2d ? this->ui->actionShading : this->ui->actionShading_2)->isChecked(),
+	};
 }
 
-bool MainWindow::drawBackfaces2D() const
+EditorTool MainWindow::selectedTool() const
 {
-	return this->ui->actionDraw_Backfaces->isChecked();
+	if (this->ui->toolButton_6->isChecked())
+		return EditorTool::Pan;
+	else if (this->ui->toolButton_7->isChecked())
+		return EditorTool::Select;
+	else if (this->ui->toolButton_8->isChecked())
+		return EditorTool::Move;
+	else if (this->ui->toolButton_9->isChecked())
+		return EditorTool::Rotate;
+	else if (this->ui->toolButton_10->isChecked())
+		return EditorTool::Scale;
+	else if (this->ui->toolButton_20->isChecked())
+		return EditorTool::CreateVertex;
+	else if (this->ui->toolButton_21->isChecked())
+		return EditorTool::CreateFace;
+
+	throw std::runtime_error("wat");
 }
 
-bool MainWindow::smoothNormals2D() const
+void MainWindow::setCurrentWorldPosition(const QVector3D &position)
 {
-	return this->ui->actionPer_Vertex_Normals->isChecked();
-}
-
-RenderMode MainWindow::renderMode3D() const
-{
-	if (this->ui->actionWireframe_2->isChecked())
-		return RenderMode::Wireframe;
-	else if (this->ui->actionFlat_2->isChecked())
-		return RenderMode::Flat;
-	else
-		return RenderMode::Textured;
-}
-
-bool MainWindow::drawBackfaces3D() const
-{
-	return this->ui->actionDraw_Backfaces_2->isChecked();
-}
-
-bool MainWindow::smoothNormals3D() const
-{
-	return this->ui->actionPer_Vertex_Normals_2->isChecked();
+	this->ui->doubleSpinBox->setValue(position.x());
+	this->ui->doubleSpinBox_2->setValue(position.y());
+	this->ui->doubleSpinBox_3->setValue(position.z());
 }
 
 void MainWindow::animationChanged()
@@ -495,6 +526,8 @@ ModelData LoadMD2(QString filename)
 
 	for (auto &frame : data.frames)
 		frame.vertices.resize(header.num_xyz);
+
+	data.vertices.resize(header.num_xyz);
 
 	file.seek(header.ofs_frames);
 

@@ -185,7 +185,7 @@ void QMDLRenderer::initializeGL()
     _modelProgram.modelviewUniformLocation = glGetUniformLocation(_modelProgram.program, "u_modelview");
 
     glUniform1i(glGetUniformLocation(_modelProgram.program, "u_texture"), 0);
-    glUniform1i(glGetUniformLocation(_modelProgram.program, "u_shaded"), 1);
+    glUniform1i(_modelProgram.shadedUniformLocation = glGetUniformLocation(_modelProgram.program, "u_shaded"), 1);
 
     _simpleProgram.program = createProgram(
         createShader(GL_VERTEX_SHADER, loadShader("simple.vert.glsl")->c_str()),
@@ -323,14 +323,17 @@ QuadrantFocus QMDLRenderer::getQuadrantFocus(QPoint xy)
         i++;
     }
 
-    throw std::runtime_error("bad quadrant");
+    return QuadrantFocus::None;
 }
 
 void QMDLRenderer::mousePressEvent(QMouseEvent *e)
 {
     _dragging = true;
     _dragButton = e->button();
-    _dragPos = e->pos();
+    _dragPos = _downPos = mapFromGlobal(QCursor::pos());
+    _dragWorldPos = mouseToWorld(_dragPos);
+    _dragDelta = {};
+    mouseMoveEvent(e);
 }
 
 void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
@@ -342,63 +345,157 @@ void QMDLRenderer::mouseReleaseEvent(QMouseEvent *e)
     
     MainWindow::instance().settings.setValue("HorizontalSplit", _horizontalSplit);
     MainWindow::instance().settings.setValue("VerticalSplit", _verticalSplit);
+
+    mouseMoveEvent(e);
+    update();
+}
+
+template<typename T>
+constexpr T Wrap(T v, T min, T max)
+{
+    T range = max - min + 1;
+
+    if (v < min)
+        v += range * ((min - v) / range + 1);
+
+    return min + (v - min) % range;
+}
+
+void QMDLRenderer::dragMatrix(QMatrix4x4 &modelview)
+{
+    if (!_dragging || _focusedQuadrant == QuadrantFocus::None)
+        return;
+        
+    float xDelta = _dragDelta.x() / _2dZoom;
+    float yDelta = _dragDelta.y() / _2dZoom;
+    
+    if (MainWindow::instance().selectedTool() == EditorTool::Move)
+    {
+        if (_focusedQuadrant == QuadrantFocus::TopLeft)
+            modelview.translate(-yDelta, -xDelta, 0);
+        else if (_focusedQuadrant == QuadrantFocus::BottomLeft)
+            modelview.translate(0, -xDelta, yDelta);
+        else if (_focusedQuadrant == QuadrantFocus::BottomRight)
+            modelview.translate(xDelta, 0, yDelta);
+    }
+    else if (MainWindow::instance().selectedTool() == EditorTool::Scale)
+    {
+        float s = 1.0f + (_dragDelta.y() * 0.01f) / _2dZoom;
+        modelview.scale(s, s, s);
+    }
+    else if (MainWindow::instance().selectedTool() == EditorTool::Rotate)
+    {
+        QuadRect rect = getQuadrantRect(_focusedQuadrant);
+        float r = 360.f * (_dragDelta.y() / (float) rect.h);
+        modelview.translate(_dragWorldPos);
+        if (_focusedQuadrant == QuadrantFocus::TopLeft)
+            modelview.rotate(r, QVector3D(0, 0, -1));
+        else if (_focusedQuadrant == QuadrantFocus::BottomLeft)
+            modelview.rotate(r, QVector3D(1, 0, 0));
+        else if (_focusedQuadrant == QuadrantFocus::BottomRight)
+            modelview.rotate(r, QVector3D(0, 1, 0));
+        modelview.translate(-_dragWorldPos);
+    }
+}
+
+void QMDLRenderer::focusLost()
+{
+    QMouseEvent ev {
+        QEvent::Type::MouseButtonRelease,
+        mapFromGlobal(QCursor::pos()),
+        QCursor::pos(),
+        Qt::MouseButton::NoButton,
+        {},
+        {}
+    };
+    QMDLRenderer::mouseReleaseEvent(&ev);
 }
 
 void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
 {
+    auto pos = mapFromGlobal(QCursor::pos());
+    auto world = mouseToWorld(pos);
+
+    MainWindow::instance().setCurrentWorldPosition(world);
+
     if (_dragging)
     {
-        auto delta = _dragPos - event->pos();
+        auto delta = _dragPos - pos;
 
-        if (_focusedQuadrant == QuadrantFocus::TopRight)
-        {
-            if (_dragButton == Qt::MouseButton::RightButton)
-                _camera.zoom(-delta.y(), _camera.getOrbitMinZoom(), _camera.getOrbitMaxZoom());
-            else if (_dragButton == Qt::MouseButton::LeftButton)
-                _camera.rotate(delta.y(), delta.x(), 0);
-		    this->update();
-        }
-        else if (_focusedQuadrant == QuadrantFocus::TopLeft ||
-                    _focusedQuadrant == QuadrantFocus::BottomLeft ||
-                    _focusedQuadrant == QuadrantFocus::BottomRight)
-        {
-            if (_dragButton == Qt::MouseButton::RightButton)
-            {
-                _2dZoom += (delta.y() * 0.01f) * _2dZoom;
-		        this->update();
-            }
-            else if (_dragButton == Qt::MouseButton::LeftButton)
-            {
-                float xDelta = delta.x() / _2dZoom;
-                float yDelta = delta.y() / _2dZoom;
+        _dragDelta += delta;
+        
+        float xDelta = delta.x() / _2dZoom;
+        float yDelta = delta.y() / _2dZoom;
 
-                if (_focusedQuadrant == QuadrantFocus::TopLeft)
-                    _2dOffset += QVector3D(-xDelta, yDelta, 0);
-                else if (_focusedQuadrant == QuadrantFocus::BottomLeft)
-                    _2dOffset += QVector3D(-xDelta, 0, yDelta);
-                else
-                    _2dOffset += QVector3D(0, -xDelta, yDelta);
-		        this->update();
-            }
-        }
-        else
+        if (_focusedQuadrant == QuadrantFocus::Horizontal ||
+            _focusedQuadrant == QuadrantFocus::Vertical ||
+            _focusedQuadrant == QuadrantFocus::Center)
         {
             bool adjust_vert = _focusedQuadrant == QuadrantFocus::Horizontal || _focusedQuadrant == QuadrantFocus::Center;
             bool adjust_horz = _focusedQuadrant == QuadrantFocus::Vertical || _focusedQuadrant == QuadrantFocus::Center;
                 
             if (adjust_horz)
-                _horizontalSplit = (float) event->pos().x() / width();
+                _horizontalSplit = (float) pos.x() / width();
             if (adjust_vert)
-                _verticalSplit = (float) event->pos().y() / height();
-
-		    this->update();
+                _verticalSplit = (float) pos.y() / height();
+        }
+        else if (MainWindow::instance().selectedTool() == EditorTool::Pan)
+        {
+            if (_focusedQuadrant == QuadrantFocus::TopRight)
+            {
+                if (_dragButton == Qt::MouseButton::RightButton)
+                    _camera.zoom(-delta.y(), _camera.getOrbitMinZoom(), _camera.getOrbitMaxZoom());
+                else if (_dragButton == Qt::MouseButton::LeftButton)
+                    _camera.rotate(delta.y(), delta.x(), 0);
+            }
+            else if (_focusedQuadrant == QuadrantFocus::TopLeft ||
+                        _focusedQuadrant == QuadrantFocus::BottomLeft ||
+                        _focusedQuadrant == QuadrantFocus::BottomRight)
+            {
+                if (_dragButton == Qt::MouseButton::RightButton)
+                {
+                    _2dZoom += (delta.y() * 0.01f) * _2dZoom;
+                }
+                else if (_dragButton == Qt::MouseButton::LeftButton)
+                {
+                    if (_focusedQuadrant == QuadrantFocus::TopLeft)
+                        _2dOffset += QVector3D(-xDelta, yDelta, 0);
+                    else if (_focusedQuadrant == QuadrantFocus::BottomLeft)
+                        _2dOffset += QVector3D(-xDelta, 0, yDelta);
+                    else if (_focusedQuadrant == QuadrantFocus::BottomRight)
+                        _2dOffset += QVector3D(0, -xDelta, yDelta);
+                }
+            }
+        }
+        
+        update();
+        
+        if (MainWindow::instance().selectedTool() == EditorTool::Pan)
+            _dragPos = { Wrap(pos.x(), 0, width() - 1), Wrap(pos.y(), 0, height() - 1) };
+        else if (_focusedQuadrant != QuadrantFocus::None)
+        {
+            QuadRect rect = getQuadrantRect(_focusedQuadrant);
+            _dragPos = { Wrap(pos.x(), rect.x, rect.x + rect.w - 1), Wrap(pos.y(), rect.y, rect.y + rect.h - 1) };
         }
 
-        _dragPos = event->pos();
+        if (_dragPos != pos)
+            QCursor::setPos(mapToGlobal(_dragPos));
+        
+        if (_focusedQuadrant == QuadrantFocus::Center)
+            setCursor(Qt::SizeAllCursor);
+        else if (_focusedQuadrant == QuadrantFocus::Horizontal)
+            setCursor(Qt::SizeVerCursor);
+        else if (_focusedQuadrant == QuadrantFocus::Vertical)
+            setCursor(Qt::SizeHorCursor);
+        else if (MainWindow::instance().selectedTool() == EditorTool::Pan)
+            setCursor(Qt::ClosedHandCursor);
+        else
+            setCursor(Qt::ArrowCursor);
+
         return;
     }
 
-    _focusedQuadrant = getQuadrantFocus(event->pos());
+    _focusedQuadrant = getQuadrantFocus(pos);
         
     int w = this->width();
     int h = this->height();
@@ -409,17 +506,20 @@ void QMDLRenderer::mouseMoveEvent(QMouseEvent *event)
     int line_width = 2 + (w & 1);
     int line_height = 2 + (h & 1);
         
-    bool within_x = event->pos().x() >= quadrant_w && event->pos().x() <= quadrant_w + line_width;
-    bool within_y = event->pos().y() >= quadrant_h && event->pos().y() <= quadrant_h + line_height;
-        
+    bool within_x = pos.x() >= quadrant_w && pos.x() <= quadrant_w + line_width;
+    bool within_y = pos.y() >= quadrant_h && pos.y() <= quadrant_h + line_height;
+
+    // the separators always take priority
     if (_focusedQuadrant == QuadrantFocus::Center)
         setCursor(Qt::SizeAllCursor);
     else if (_focusedQuadrant == QuadrantFocus::Horizontal)
         setCursor(Qt::SizeVerCursor);
     else if (_focusedQuadrant == QuadrantFocus::Vertical)
         setCursor(Qt::SizeHorCursor);
-    else
+    else if (MainWindow::instance().selectedTool() == EditorTool::Pan)
         setCursor(Qt::OpenHandCursor);
+    else
+        setCursor(Qt::ArrowCursor);
 }
 
 void QMDLRenderer::leaveEvent(QEvent *event)
@@ -438,10 +538,15 @@ void QMDLRenderer::clearQuadrant(QuadRect rect, QVector4D color)
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void QMDLRenderer::drawModels(const Matrix4 &projection, RenderMode mode, bool backfaces, bool smoothNormals, bool is_2d)
+void QMDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
 {
+    RenderParameters params = MainWindow::instance().getRenderParameters(is_2d);
+    QMatrix4x4 projection, modelview;
+    getQuadrantMatrices(quadrant, projection, modelview);
+
     glUseProgram(_simpleProgram.program);
     glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, projection.data());
+    glUniformMatrix4fv(_simpleProgram.modelviewUniformLocation, 1, false, modelview.data());
 
     glDisable(GL_CULL_FACE);
     
@@ -473,27 +578,31 @@ void QMDLRenderer::drawModels(const Matrix4 &projection, RenderMode mode, bool b
     
     glUseProgram(_modelProgram.program);
     glUniformMatrix4fv(_modelProgram.projectionUniformLocation, 1, false, projection.data());
+    dragMatrix(modelview);
+    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
+
+    glUniform1i(_modelProgram.shadedUniformLocation, params.shaded);
 
     // model
     glBindVertexArray(_vao);
     glVertexAttrib4f(2, 1.0f, 1.0f, 1.0f, 1.0f);
 
-    if (smoothNormals)
+    if (params.smoothNormals)
         glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     else
         glBindBuffer(GL_ARRAY_BUFFER, _flatNormalBuffer);
 
     glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, nullptr);
 
-    if (!backfaces)
+    if (!params.drawBackfaces)
         glEnable(GL_CULL_FACE);
 
-    if (mode == RenderMode::Wireframe)
+    if (params.mode == RenderMode::Wireframe)
     {
         glBindTexture(GL_TEXTURE_2D, _blackTexture);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     }
-    else if (mode == RenderMode::Flat)
+    else if (params.mode == RenderMode::Flat)
         glBindTexture(GL_TEXTURE_2D, _whiteTexture);
     else
         glBindTexture(GL_TEXTURE_2D, _modelTexture);
@@ -534,67 +643,94 @@ void QMDLRenderer::drawModels(const Matrix4 &projection, RenderMode mode, bool b
     }
 }
 
-void QMDLRenderer::draw2D(Orientation2D orientation, QuadrantFocus quadrant)
+void QMDLRenderer::getQuadrantMatrices(QuadrantFocus quadrant, Matrix4 &projection, Matrix4 &modelview)
 {
     QuadRect rect = getQuadrantRect(quadrant);
 
-    float hw = (rect.w / 2.0f);
-    float hh = (rect.h / 2.0f);
-        
-    QMatrix4x4 projection;
-    projection.ortho(-hw, hw, -hh, hh, -8192, 8192);
-
-    QMatrix4x4 modelview;
-    modelview.scale(_2dZoom);
-
-    if (orientation == Orientation2D::XY)
+    if (quadrant == QuadrantFocus::TopRight)
     {
-        modelview.translate(_2dOffset.x(), _2dOffset.y());
-        modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
-    }
-    else if (orientation == Orientation2D::XZ)
-    {
-        modelview.translate(_2dOffset.y(), _2dOffset.z());
-        modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
-        modelview.rotate(-90, 0.0f, 1.0f, 0.0f);
-        modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
-    }
-    else if (orientation == Orientation2D::ZY)
-    {
-        modelview.translate(_2dOffset.x(), _2dOffset.z());
-        modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
-        modelview.rotate(-90, 0.0f, 1.0f, 0.0f);
-    }
-    
-    glUseProgram(_simpleProgram.program);
-    glUniformMatrix4fv(_simpleProgram.modelviewUniformLocation, 1, false, modelview.data());
-    glUseProgram(_modelProgram.program);
-    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
+        _camera.perspective(45, (float) rect.w / rect.h, 0.1f, 1024.f);
+        projection = _camera.getProjectionMatrix();
 
-    clearQuadrant(rect, { 0.4f, 0.4f, 0.4f, 1.0f });
+        modelview = _camera.getViewMatrix();
+        modelview.rotate(-90, { 1, 0, 0 });
+        modelview.translate(-_2dOffset.y(), _2dOffset.x(), _2dOffset.z());
+    }
+    else
+    {
+        float hw = (rect.w / 2.0f);
+        float hh = (rect.h / 2.0f);
+        projection.ortho(-hw, hw, -hh, hh, -8192, 8192);
 
-    drawModels(projection, MainWindow::instance().renderMode2D(), MainWindow::instance().drawBackfaces2D(), MainWindow::instance().smoothNormals2D(), true);
+        modelview.setToIdentity();
+        modelview.scale(_2dZoom);
+
+        if (quadrant == QuadrantFocus::TopLeft)
+        {
+            modelview.translate(_2dOffset.x(), _2dOffset.y());
+            modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
+        }
+        else if (quadrant == QuadrantFocus::BottomLeft)
+        {
+            modelview.translate(_2dOffset.x(), _2dOffset.z());
+            modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
+            modelview.rotate(-90, 0.0f, 1.0f, 0.0f);
+        }
+        else if (quadrant == QuadrantFocus::BottomRight)
+        {
+            modelview.translate(_2dOffset.y(), _2dOffset.z());
+            modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
+            modelview.rotate(-90, 0.0f, 1.0f, 0.0f);
+            modelview.rotate(-90, 0.0f, 0.0f, 1.0f);
+        }
+    }
+}
+
+void QMDLRenderer::draw2D(Orientation2D orientation, QuadrantFocus quadrant)
+{
+    clearQuadrant(getQuadrantRect(quadrant), { 0.4f, 0.4f, 0.4f, 1.0f });
+    drawModels(quadrant, true);
 }
 
 void QMDLRenderer::draw3D(QuadrantFocus quadrant)
 {
-    QuadRect rect = getQuadrantRect(quadrant);
-        
-    // top-right
-    _camera.perspective(45, (float) rect.w / rect.h, 0.1f, 1024.f);
-        
-    Matrix4 modelview = _camera.getViewMatrix();
-    modelview.rotate(-90, { 1, 0, 0 });
-    modelview.translate(-_2dOffset.y(), _2dOffset.x(), _2dOffset.z());
+    clearQuadrant(getQuadrantRect(quadrant), { 0.4f, 0.4f, 0.4f, 1.0f });
+    drawModels(quadrant, false);
+}
 
-    glUseProgram(_simpleProgram.program);
-    glUniformMatrix4fv(_simpleProgram.modelviewUniformLocation, 1, false, modelview.data());
-    glUseProgram(_modelProgram.program);
-    glUniformMatrix4fv(_modelProgram.modelviewUniformLocation, 1, false, modelview.data());
+QVector3D QMDLRenderer::mouseToWorld(QPoint pos)
+{
+    if (_focusedQuadrant == QuadrantFocus::None ||
+        _focusedQuadrant == QuadrantFocus::Vertical ||
+        _focusedQuadrant == QuadrantFocus::Horizontal ||
+        _focusedQuadrant == QuadrantFocus::Center ||
+        _focusedQuadrant == QuadrantFocus::TopRight)
+        return {};
 
-    clearQuadrant(rect, { 0.4f, 0.4f, 0.4f, 1.0f });
+    auto r = getQuadrantRect(_focusedQuadrant);
+    Matrix4 projection, modelview;
+    getQuadrantMatrices(_focusedQuadrant, projection, modelview);
 
-    drawModels(_camera.getProjectionMatrix(), MainWindow::instance().renderMode3D(), MainWindow::instance().drawBackfaces3D(), MainWindow::instance().smoothNormals3D(), false);
+    QVector3D result = QVector3D(pos).unproject(modelview, projection, { r.x, r.y, r.w, r.h });
+    
+    if (_focusedQuadrant == QuadrantFocus::TopLeft)
+    {
+        result.setZ(0);
+        // FIXME: ????
+        result.setX(-result.x() + _2dOffset.y() * 2);
+    }
+    else
+    {
+        // FIXME: ????
+        result.setZ(-(result.z() + _2dOffset.z() * 2));
+
+        if (_focusedQuadrant == QuadrantFocus::BottomLeft)
+            result.setX(0);
+        else if (_focusedQuadrant == QuadrantFocus::BottomRight)
+            result.setY(0);
+    }
+
+    return result;
 }
     
 void QMDLRenderer::paintGL()
@@ -616,6 +752,36 @@ void QMDLRenderer::paintGL()
     draw2D(Orientation2D::XZ, QuadrantFocus::BottomRight);
 
     draw3D(QuadrantFocus::TopRight);
+
+    if (_dragging && MainWindow::instance().selectedTool() == EditorTool::Select)
+    {
+        QuadRect selectRect {
+            std::min(_dragPos.x(), _downPos.x()),
+            std::min(_dragPos.y(), _downPos.y()),
+            std::abs(_dragPos.x() - _downPos.x()),
+            std::abs(_dragPos.y() - _downPos.y())
+        };
+
+        clearQuadrant({
+            selectRect.x, selectRect.y,
+            selectRect.w, 1
+        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+
+        clearQuadrant({
+            selectRect.x, selectRect.y + selectRect.h,
+            selectRect.w, 1
+        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+
+        clearQuadrant({
+            selectRect.x, selectRect.y,
+            1, selectRect.h
+        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+
+        clearQuadrant({
+            selectRect.x + selectRect.w, selectRect.y,
+            1, selectRect.h
+        }, { 0.0f, 0.5f, 0.5f, 1.0f });
+    }
         
 #ifdef RENDERDOC_SUPPORT
     if (_doRenderDoc && rdoc_api) rdoc_api->EndFrameCapture(NULL, NULL);
@@ -678,12 +844,6 @@ GLuint QMDLRenderer::createProgram(GLuint vertexShader, GLuint fragmentShader)
     throw std::runtime_error(infoLog);
 }
 
-/*    if (full_upload)
-        glBufferData(GL_ARRAY_BUFFER, sizeof(GPUVertexData) * count, _bufferData.data(), GL_DYNAMIC_DRAW);
-    else
-        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(GPUVertexData) * count, _bufferData.data());
-*/
-
 template<typename T>
 static void uploadToBuffer(GLuint buffer, bool full_upload, const std::vector<T> &data)
 {
@@ -733,13 +893,20 @@ void QMDLRenderer::rebuildBuffer()
 
     for (auto &tri : this->_model->triangles)
     {
-        auto &cv0 = this->_model->frames[cur_frame].vertices[tri.vertices[0]];
-        auto &cv1 = this->_model->frames[cur_frame].vertices[tri.vertices[1]];
-        auto &cv2 = this->_model->frames[cur_frame].vertices[tri.vertices[2]];
+        auto &from = this->_model->frames[cur_frame];
+        auto &to = this->_model->frames[next_frame];
+        
+        auto &gv0 = this->_model->vertices[tri.vertices[0]];
+        auto &gv1 = this->_model->vertices[tri.vertices[1]];
+        auto &gv2 = this->_model->vertices[tri.vertices[2]];
 
-        auto &nv0 = this->_model->frames[next_frame].vertices[tri.vertices[0]];
-        auto &nv1 = this->_model->frames[next_frame].vertices[tri.vertices[1]];
-        auto &nv2 = this->_model->frames[next_frame].vertices[tri.vertices[2]];
+        auto &cv0 = from.vertices[tri.vertices[0]];
+        auto &cv1 = from.vertices[tri.vertices[1]];
+        auto &cv2 = from.vertices[tri.vertices[2]];
+
+        auto &nv0 = to.vertices[tri.vertices[0]];
+        auto &nv1 = to.vertices[tri.vertices[1]];
+        auto &nv2 = to.vertices[tri.vertices[2]];
         
         std::array<QVector3D, 3> positions;
         std::array<QVector3D, 3> normals;
@@ -838,11 +1005,15 @@ void QMDLRenderer::rebuildBuffer()
             ov1.position = positions[1];
             ov2.position = positions[2];
             
-            ov0.color = ov1.color = ov2.color = { 255, 255, 255, 127 };
+            ov0.color = gv0.selected ? VertexColor{ 127, 12, 12, 255 } : VertexColor{ 255, 255, 255, 127 };
+            ov1.color = gv1.selected ? VertexColor{ 127, 12, 12, 255 } : VertexColor{ 255, 255, 255, 127 };
+            ov2.color = gv2.selected ? VertexColor{ 127, 12, 12, 255 } : VertexColor{ 255, 255, 255, 127 };
         }
 
         n += 3;
     }
+
+    _pointData[0].position = _dragWorldPos;
 
     uploadToBuffer(_buffer, full_upload, _bufferData);
     uploadToBuffer(_pointBuffer, full_upload, _pointData);

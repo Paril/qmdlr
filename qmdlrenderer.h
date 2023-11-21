@@ -12,16 +12,18 @@
 #endif
 #include "modeldata.h"
 
+using VertexColor = std::array<uint8_t, 4>;
+
 struct GPUVertexData
 {
-    QVector3D   position;
-    QVector2D   texcoord;
+    QVector3D position;
+    QVector2D texcoord;
 };
 
 struct GPUPointData
 {
-    QVector3D               position;
-    std::array<uint8_t, 4>  color;
+    QVector3D   position;
+    VertexColor color;
 };
 
 enum class QuadrantFocus
@@ -50,7 +52,7 @@ struct QuadRect { int x, y, w, h; };
 struct ProgramShared
 {
     GLuint program;
-    GLint projectionUniformLocation, modelviewUniformLocation;
+    GLint projectionUniformLocation, modelviewUniformLocation, shadedUniformLocation;
 };
 
 class QMDLRenderer : public QOpenGLWidget
@@ -66,6 +68,7 @@ public:
     void captureRenderDoc(bool);
     void resetAnimation();
     void setAnimated(bool animating);
+    void focusLost();
 
 protected:
     void initializeGL() override;
@@ -85,17 +88,20 @@ private:
 
     QuadRect getQuadrantRect(QuadrantFocus quadrant);
     QuadrantFocus getQuadrantFocus(QPoint xy);
-
+    void dragMatrix(QMatrix4x4 &modelview); 
+    void getQuadrantMatrices(QuadrantFocus quadrant, Matrix4 &projection, Matrix4 &modelview);
     void clearQuadrant(QuadRect rect, QVector4D color);
-    void drawModels(const Matrix4 &projection, RenderMode mode, bool backfaces, bool smoothNormals, bool is_2d);
+    void drawModels(QuadrantFocus quadrant, bool is_2d);
     void draw2D(Orientation2D orientation, QuadrantFocus quadrant);
     void draw3D(QuadrantFocus quadrant);
+    QVector3D mouseToWorld(QPoint pos);
     
     std::unique_ptr<QOpenGLDebugLogger> _logger;
     QElapsedTimer _animationTimer;
     QuadrantFocus _focusedQuadrant = QuadrantFocus::None;
     bool _dragging = false;
-    QPoint _dragPos;
+    QVector3D _dragWorldPos;
+    QPoint _dragPos, _downPos, _dragDelta;
     Qt::MouseButton _dragButton;
     float _horizontalSplit, _verticalSplit;
     ProgramShared _modelProgram, _simpleProgram;

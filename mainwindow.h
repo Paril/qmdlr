@@ -16,6 +16,25 @@ enum class RenderMode
     Textured
 };
 
+struct RenderParameters
+{
+    RenderMode  mode;
+    bool        drawBackfaces;
+    bool        smoothNormals;
+    bool        shaded;
+};
+
+enum class EditorTool
+{
+    Pan,
+    Select,
+    Move,
+    Rotate,
+    Scale,
+    CreateVertex,
+    CreateFace
+};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -34,12 +53,10 @@ public:
     bool animationInterpolated() const;
     int animationStartFrame() const;
     int animationEndFrame() const;
-    RenderMode renderMode2D() const;
-    bool drawBackfaces2D() const;
-    bool smoothNormals2D() const;
-    RenderMode renderMode3D() const;
-    bool drawBackfaces3D() const;
-    bool smoothNormals3D() const;
+    RenderParameters getRenderParameters(bool is_2d) const;
+    EditorTool selectedTool() const;
+
+    void setCurrentWorldPosition(const QVector3D &position);
 
     QSettings settings;
 
