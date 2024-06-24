@@ -30,6 +30,7 @@ struct GPUVertexData
     glm::vec2 texcoord;
     int       selected;
     int       selectedVertex;
+    Color     bary;
 };
 
 struct GPUPointData

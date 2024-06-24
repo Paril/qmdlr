@@ -393,11 +393,12 @@ void MDLRenderer::initializeGL()
 
     glGenVertexArrays(1, &_vao);
     glBindVertexArray(_vao);
-    enableVertexAttribArrays(ATTRIB_POSITION, ATTRIB_TEXCOORD, ATTRIB_NORMAL, ATTRIB_SELECTED, ATTRIB_SELECTED_VERTEX);
+    enableVertexAttribArrays(ATTRIB_POSITION, ATTRIB_TEXCOORD, ATTRIB_NORMAL, ATTRIB_SELECTED, ATTRIB_SELECTED_VERTEX, ATTRIB_COLOR);
     vertexAttribPointer<&GPUVertexData::position>(ATTRIB_POSITION, 3, GL_FLOAT);
     vertexAttribPointer<&GPUVertexData::texcoord>(ATTRIB_TEXCOORD, 2, GL_FLOAT);
     vertexAttribIPointer<&GPUVertexData::selected>(ATTRIB_SELECTED, 1, GL_INT);
     vertexAttribIPointer<&GPUVertexData::selectedVertex>(ATTRIB_SELECTED_VERTEX, 1, GL_INT);
+    vertexAttribPointer<&GPUVertexData::bary>(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE);
     glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     vertexAttribPointer<glm::vec3>(ATTRIB_NORMAL, 3, GL_FLOAT);
     glBindBuffer(GL_ARRAY_BUFFER, _flatNormalBuffer);
@@ -964,7 +965,7 @@ void MDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
     if (params.filtered)
         glBindSampler(0, _filteredSampler);
 
-    glUniform1i(_modelProgram.isLineLocation, params.mode == RenderMode::Wireframe);
+    glUniform1i(_modelProgram.isLineLocation, (params.mode == RenderMode::Wireframe) ? 1 : (params.mode != RenderMode::Wireframe && params.showOverlay) ? 2 : 0);
 
     for (auto &mesh : model().model().meshes)
     {
@@ -983,26 +984,6 @@ void MDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         
         glDrawArrays(GL_TRIANGLES, offset, count);
         offset += count;
-    }
-
-    if (params.mode != RenderMode::Wireframe && params.showOverlay)
-    {
-        offset = 0;
-        glUniform1i(_modelProgram.isLineLocation, 1);
-        glBindTexture(GL_TEXTURE_2D, _whiteTexture);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glPolygonOffset(-1.0f, 0.0f);
-        glEnable(GL_POLYGON_OFFSET_LINE);
-
-        for (auto &mesh : model().model().meshes)
-        {
-            GLsizei count = mesh.triangles.size() * 3;
-            glDrawArrays(GL_TRIANGLES, offset, count);
-            offset += count;
-        }
-
-        glDisable(GL_POLYGON_OFFSET_LINE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 
     if (params.filtered)
@@ -1502,6 +1483,10 @@ void MDLRenderer::rebuildBuffer()
                     ov1.selectedVertex = mesh.vertices[tri.vertices[1]].selected;
                     ov2.selectedVertex = mesh.vertices[tri.vertices[2]].selected;
                 }
+
+                ov0.bary = { 0, 0, 0, 0 };
+                ov1.bary = { 1, 0, 0, 0 };
+                ov2.bary = { 0, 1, 0, 0 };
             }
 
             n += 3;

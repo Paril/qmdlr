@@ -10,10 +10,12 @@ in vec2 i_texcoord;
 in vec3 i_normal;
 in int i_selected;
 in int i_selected_vertex;
+in vec4 i_bary;
 
 out vec2 v_texcoord;
 out vec3 v_normal;
 flat out int v_selected;
+out vec2 v_bary;
  
 void main()
 {
@@ -34,4 +36,5 @@ void main()
 	v_normal = n;
     v_selected = i_selected;
 	gl_Position = u_projection * u_modelview * p;
+	v_bary = i_bary.rg;
 }
