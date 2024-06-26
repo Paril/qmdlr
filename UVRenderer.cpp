@@ -7,21 +7,19 @@
 // return a fixed array of texcoord positions
 // that match the given transformation. it only modifies
 // coordinates that are actually changed by the matrix.
-static const std::vector<glm::vec2> &transformTexcoords(const ModelMesh &mesh, int32_t width, int32_t height, const glm::mat4 &matrix, SelectMode mode)
+static const std::vector<glm::vec2> &transformTexcoords(const ModelMesh &mesh, const glm::mat4 &matrix, SelectMode mode)
 {
     static std::vector<glm::vec2> coordinates;
     coordinates.resize(mesh.texcoords.size());
 
     const auto &verticesSelected = model().mutator().getSelectedTextureCoordinates(mesh, mode);
 
-    glm::vec2 scale { (float) width, (float) height };
-
     for (size_t i = 0; i < mesh.texcoords.size(); i++)
     {
         coordinates[i] = mesh.texcoords[i].pos;
 
         if (!glm::all(glm::equal(matrix, glm::identity<glm::mat4>())) && verticesSelected.contains(i))
-            coordinates[i] = glm::vec2(matrix * glm::vec4(coordinates[i] * scale, 0, 1)) / scale;
+            coordinates[i] = glm::vec2(matrix * glm::vec4(coordinates[i], 0, 1));
     }
 
     return coordinates;
@@ -96,7 +94,7 @@ void UVRenderer::paint()
             continue;
 
         const auto &verticesSelected = model().mutator().getSelectedTextureCoordinates(mesh, ui().editorUV().selectMode());
-        const auto &coordinates = transformTexcoords(mesh, skin->width, skin->height, drag, ui().editorUV().selectMode());
+        const auto &coordinates = transformTexcoords(mesh, drag, ui().editorUV().selectMode());
 
         if (ui().editorUV().lineMode() == LineDisplayMode::Simple)
         {
@@ -246,6 +244,8 @@ glm::mat4 UVRenderer::getDragMatrix()
 
     float zoom = (float) ui().editorUV().scale();
 
+    matrix = glm::scale(matrix, glm::vec3(1.f / skin->width, 1.f / skin->height, 1.f));
+
     if (ui().editorUV().tool() == EditorTool::Move)
     {
         if (ui().editorUV().axis().X)
@@ -270,6 +270,8 @@ glm::mat4 UVRenderer::getDragMatrix()
         matrix = glm::rotate(matrix, glm::radians(r), { 0.f, 0.f, -1.f });
         matrix = glm::translate(matrix, { -(_dragWorldPos.x - _skinX) / zoom, -(_dragWorldPos.y - _skinY) / zoom, 1.f });
     }
+
+    matrix = glm::scale(matrix, glm::vec3(skin->width, skin->height, 1.f));
 
     return matrix;
 }

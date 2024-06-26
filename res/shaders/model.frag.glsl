@@ -15,7 +15,7 @@ uniform vec4 u_line2D[2];
 
 in vec2 v_texcoord;
 in vec3 v_normal;
-flat in int v_selected;
+flat in int v_selected_flags;
 in vec2 v_bary;
 
 out vec4 o_color;
@@ -56,34 +56,36 @@ void main()
 	}
 
 	vec4 additional_color;
+	int selectedFace = ((v_selected_flags & FLAG_SELECTED_FACE) != 0) ? 1 : 0;
 
 	if (u_2d)
 	{
 		if (u_line == 1)
-			additional_color = u_line2D[v_selected];
+			additional_color = u_line2D[selectedFace];
 		else
-			additional_color = u_face2D[v_selected];
+			additional_color = u_face2D[selectedFace];
 	}
 	else
 	{
 		if (u_line == 1)
-			additional_color = u_line3D[v_selected];
+			additional_color = u_line3D[selectedFace];
 		else
-			additional_color = u_face3D[v_selected];
+			additional_color = u_face3D[selectedFace];
 	}
 
-	if ((flags & FLAG_FACE_MODE) != 0)
+	vec4 line_color = u_2d ? u_line2D[selectedFace] : u_line3D[selectedFace];
+
+	if (u_line == 1)
+		o_color = line_color;
+	else
 	{
-		if (u_line == 1)
-			o_color = additional_color;
-		else
+		float grid = gridFactor(v_bary, 0.75, 0.5);
+
+		if ((flags & FLAG_FACE_MODE) != 0)
 			o_color += additional_color;
 
-		vec4 line_color = u_2d ? u_line2D[v_selected] : u_line3D[v_selected];
-		o_color.rgb = mix(line_color.rgb, o_color.rgb, gridFactor(v_bary, 0.5) * line_color.a);
-	}
-	else if (u_line == 2)
-	{
-		o_color.rgb = mix(vec3(1), o_color.rgb, gridFactor(v_bary, 0.5));
+		vec3 line_mixed_color = mix(o_color.rgb, line_color.rgb, line_color.a);
+
+		o_color.rgb = mix(line_mixed_color, o_color.rgb, grid);
 	}
 }

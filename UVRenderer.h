@@ -21,8 +21,11 @@ public:
     
     const int &width() { return _width; }
     const int &height() { return _height; }
+    
+    ImGuiMouseButton &editorMouseToViewport() { return _editorMouseToViewport; }
 
 private:
+    ImGuiMouseButton _editorMouseToViewport = 0;
     void rectangleSelect(aabb2 rect, glm::vec2 tcScale);
 
     bool _dragging = false;

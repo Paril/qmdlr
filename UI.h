@@ -35,8 +35,6 @@ public:
 
     bool syncSelection = false;
 
-    ImGuiMouseButton &editorMouseToViewport() { return _editorMouseToViewport; }
-
     void LoadThemes();
     void LoadTheme(Theme theme);
 
@@ -62,8 +60,6 @@ private:
 
     Editor3D _editor3D;
     EditorUV _editorUV;
-
-    ImGuiMouseButton _editorMouseToViewport = 0;
 
     std::vector<LoadableTheme> _themes;
     theme_color_array _themeColors = EditorColorDefaults;

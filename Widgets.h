@@ -83,7 +83,7 @@ namespace ImGui::qmdlr
         glm::ivec2 relativePos;
         static glm::ivec2 mouseRestorePosition;
 
-        if (ui().editorMouseToViewport())
+        if (renderer.editorMouseToViewport())
         {
             // check if we need to modify down clicks
             ImGuiMouseButton pressed = 0;
@@ -92,7 +92,7 @@ namespace ImGui::qmdlr
                 if (ImGui::IsMouseDown(i))
                     pressed |= 1 << i;
 
-            if (pressed != ui().editorMouseToViewport())
+            if (pressed != renderer.editorMouseToViewport())
             {
                 renderer.mouseReleaseEvent(localPos);
 
@@ -107,10 +107,10 @@ namespace ImGui::qmdlr
                     SDL_WarpMouseGlobal(mouseRestorePosition.x, mouseRestorePosition.y);
                 }
 
-                ui().editorMouseToViewport() = pressed;
+                renderer.editorMouseToViewport() = pressed;
             }
 
-            if (ui().editorMouseToViewport())
+            if (renderer.editorMouseToViewport())
             {
                 if (SDL_GetRelativeMouseMode())
                 {
@@ -134,7 +134,7 @@ namespace ImGui::qmdlr
             if (clicked)
             {
                 SDL_GetGlobalMouseState(&mouseRestorePosition.x, &mouseRestorePosition.y);
-                ui().editorMouseToViewport() = clicked;
+                renderer.editorMouseToViewport() = clicked;
                 SDL_SetRelativeMouseMode((SDL_bool) renderer.mousePressEvent(clicked, localPos));
                 SDL_GetRelativeMouseState(nullptr, nullptr);
             }

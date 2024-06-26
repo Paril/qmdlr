@@ -26,10 +26,15 @@ struct GPURenderData
 
 struct GPUVertexData
 {
+    enum {
+        FLAG_SELECTED_FACE      = 1,
+        FLAG_SELECTED_VERTEX    = 2,
+        FLAG_SELECTED_UV        = 4
+    };
+
     glm::vec3 position;
     glm::vec2 texcoord;
-    int       selected;
-    int       selectedVertex;
+    int       selectedFlags; // 0 = face, 1 = vertex, 2 = uv
     Color     bary;
 };
 
@@ -130,8 +135,11 @@ public:
 
     void colorsChanged();
     void markBufferDirty() { _bufferDirty = true; }
+    
+    ImGuiMouseButton &editorMouseToViewport() { return _editorMouseToViewport; }
 
 private:
+    ImGuiMouseButton _editorMouseToViewport = 0;
     void generateGrid(float grid_size, size_t count);
     void generateAxis();
 

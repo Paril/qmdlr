@@ -1534,10 +1534,9 @@ class UndoRedoUVCoordinatesTransformed : public UndoRedoState
 public:
     UndoRedoUVCoordinatesTransformed() = default;
 
-	UndoRedoUVCoordinatesTransformed(const glm::mat4 &matrix, const glm::vec2 &tcScale) :
+	UndoRedoUVCoordinatesTransformed(const glm::mat4 &matrix) :
         UndoRedoState(),
-        matrix(matrix),
-        tcScale(tcScale)
+        matrix(matrix)
     {
     }
 
@@ -1567,7 +1566,7 @@ public:
             for (size_t v = 0; v < vertex_count; v++)
             {
                 auto &p = data->meshes[mesh_id].texcoords[mesh_vertices[i++]].pos;
-                p = glm::vec2(matrix * glm::vec4(p * tcScale, 0.f, 1.f)) / tcScale;
+                p = glm::vec2(matrix * glm::vec4(p, 0.f, 1.f));
             }
         }
 
@@ -1581,13 +1580,13 @@ public:
 
 	virtual void Read(std::istream &input) override
     {
-        input >= matrix >= tcScale >= mesh_vertices >= uv_positions;
+        input >= matrix >= mesh_vertices >= uv_positions;
         CalculateSize();
     }
 
 	virtual void Write(std::ostream &output) const override
     {
-        output <= matrix <= tcScale <= mesh_vertices <= uv_positions;
+        output <= matrix <= mesh_vertices <= uv_positions;
     }
 
     virtual size_t Size() const override { return _size; }
@@ -1596,7 +1595,6 @@ public:
 
 private:
     glm::mat4              matrix;
-    glm::vec2              tcScale;
     std::vector<size_t>    mesh_vertices;
     std::vector<glm::vec2> uv_positions;
     size_t                 _size = 0;
@@ -1625,9 +1623,8 @@ void ModelMutator::applyUVMatrix(const glm::mat4 &matrix, SelectMode mode)
         return;
 
     int scale = ui().editorUV().scale();
-    glm::vec2 tcScale = { (float) skin->width, (float) skin->height };
 
-    auto state = std::make_unique<UndoRedoUVCoordinatesTransformed>(matrix, tcScale);
+    auto state = std::make_unique<UndoRedoUVCoordinatesTransformed>(matrix);
 
     for (size_t i = 0; i < data->meshes.size(); i++)
     {

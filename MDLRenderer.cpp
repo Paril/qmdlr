@@ -18,7 +18,6 @@ enum : GLuint
     ATTRIB_COLOR,
     ATTRIB_NORMAL,
     ATTRIB_SELECTED,
-    ATTRIB_SELECTED_VERTEX,
     ATTRIB_COUNT
 };
 
@@ -393,11 +392,10 @@ void MDLRenderer::initializeGL()
 
     glGenVertexArrays(1, &_vao);
     glBindVertexArray(_vao);
-    enableVertexAttribArrays(ATTRIB_POSITION, ATTRIB_TEXCOORD, ATTRIB_NORMAL, ATTRIB_SELECTED, ATTRIB_SELECTED_VERTEX, ATTRIB_COLOR);
+    enableVertexAttribArrays(ATTRIB_POSITION, ATTRIB_TEXCOORD, ATTRIB_NORMAL, ATTRIB_SELECTED, ATTRIB_COLOR);
     vertexAttribPointer<&GPUVertexData::position>(ATTRIB_POSITION, 3, GL_FLOAT);
     vertexAttribPointer<&GPUVertexData::texcoord>(ATTRIB_TEXCOORD, 2, GL_FLOAT);
-    vertexAttribIPointer<&GPUVertexData::selected>(ATTRIB_SELECTED, 1, GL_INT);
-    vertexAttribIPointer<&GPUVertexData::selectedVertex>(ATTRIB_SELECTED_VERTEX, 1, GL_INT);
+    vertexAttribIPointer<&GPUVertexData::selectedFlags>(ATTRIB_SELECTED, 1, GL_INT);
     vertexAttribPointer<&GPUVertexData::bary>(ATTRIB_COLOR, 4, GL_UNSIGNED_BYTE);
     glBindBuffer(GL_ARRAY_BUFFER, _smoothNormalBuffer);
     vertexAttribPointer<glm::vec3>(ATTRIB_NORMAL, 3, GL_FLOAT);
@@ -995,32 +993,15 @@ void MDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
 
     if (params.showTicks || params.showNormals)
     {
-        // this is super ugly but it works ok enough for now.
-        glDepthFunc(GL_LEQUAL);
-	
-        Matrix4 depthProj = projection;
-        if (!depthProj[3][3])
-        {
-            constexpr float n = 0.1f;
-            constexpr float f = 1024;
-            constexpr float delta = 0.25f;
-            constexpr float pz = 8.5f;
-	        constexpr float epsilon = -2.0f * f * n * delta / ((f + n) * pz * (pz + delta));
-
-    	    depthProj[3][3] = -epsilon;
-        }
-        else
-            glm::scale(depthProj, glm::vec3(1.0f, 1.0f, 0.98f));
-        
         if (params.showNormals)
         {
             glUseProgram(_normalProgram.program);
-            glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, glm::value_ptr(depthProj));
+            glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, glm::value_ptr(projection));
             glUniformMatrix4fv(_simpleProgram.modelviewUniformLocation, 1, false, glm::value_ptr(modelview));
         }
 
         glUseProgram(_simpleProgram.program);
-        glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, glm::value_ptr(depthProj));
+        glUniformMatrix4fv(_simpleProgram.projectionUniformLocation, 1, false, glm::value_ptr(projection));
 
         glBindTexture(GL_TEXTURE_2D, _whiteTexture);
     }
@@ -1044,11 +1025,6 @@ void MDLRenderer::drawModels(QuadrantFocus quadrant, bool is_2d)
         glBindVertexArray(_normalVao);
         glBindBuffer(GL_ARRAY_BUFFER, _normalsBuffer);
         glDrawArrays(GL_LINES, 0, (GLsizei) _normalsData.size());
-    }
-    
-    if (params.showTicks || params.showNormals)
-    {
-        glDepthFunc(GL_LESS);
     }
 }
 
@@ -1199,7 +1175,7 @@ void MDLRenderer::paint()
     if (auto matrixUV = ui().editorUV().renderer().getDragMatrix(); !glm::all(glm::equal(matrixUV, glm::identity<glm::mat4>())))
     {
         _uboData.flags |= GPURenderData::FLAG_UV_SELECTED;
-        _uboData.drag3DMatrix = matrixUV;
+        _uboData.dragUVMatrix = matrixUV;
     }
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(_uboData), &_uboData);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);  
@@ -1318,7 +1294,6 @@ GLuint MDLRenderer::createProgram(GLuint vertexShader, GLuint fragmentShader)
     glBindAttribLocation(program, ATTRIB_COLOR, "i_color");
     glBindAttribLocation(program, ATTRIB_NORMAL, "i_normal");
     glBindAttribLocation(program, ATTRIB_SELECTED, "i_selected");
-    glBindAttribLocation(program, ATTRIB_SELECTED_VERTEX, "i_selected_vertex");
 
 	glLinkProgram(program);
 
@@ -1465,24 +1440,40 @@ void MDLRenderer::rebuildBuffer()
                 ov1.texcoord = st1.pos;
                 ov2.texcoord = st2.pos;
 
+                ov0.selectedFlags = ov1.selectedFlags = ov2.selectedFlags = 0;
+
                 if (ui().editor3D().editorSelectMode() == SelectMode::Face)
                 {
-                    ov0.selected = ov1.selected = ov2.selected = tri.selectedFace;
-
-                    ov0.selectedVertex = selectedVerticesFromTriangles.contains(tri.vertices[0]);
-                    ov1.selectedVertex = selectedVerticesFromTriangles.contains(tri.vertices[1]);
-                    ov2.selectedVertex = selectedVerticesFromTriangles.contains(tri.vertices[2]);
+                    if (tri.selectedFace)
+                    {
+                        ov0.selectedFlags |= GPUVertexData::FLAG_SELECTED_FACE;
+                        ov1.selectedFlags |= GPUVertexData::FLAG_SELECTED_FACE;
+                        ov2.selectedFlags |= GPUVertexData::FLAG_SELECTED_FACE;
+                    }
+                    
+                    if (selectedVerticesFromTriangles.contains(tri.vertices[0]))
+                        ov0.selectedFlags |= GPUVertexData::FLAG_SELECTED_VERTEX;
+                    if (selectedVerticesFromTriangles.contains(tri.vertices[1]))
+                        ov1.selectedFlags |= GPUVertexData::FLAG_SELECTED_VERTEX;
+                    if (selectedVerticesFromTriangles.contains(tri.vertices[2]))
+                        ov2.selectedFlags |= GPUVertexData::FLAG_SELECTED_VERTEX;
                 }
                 else
                 {
-                    ov0.selected = ov0.selectedVertex;
-                    ov1.selected = ov1.selectedVertex;
-                    ov2.selected = ov2.selectedVertex;
-
-                    ov0.selectedVertex = mesh.vertices[tri.vertices[0]].selected;
-                    ov1.selectedVertex = mesh.vertices[tri.vertices[1]].selected;
-                    ov2.selectedVertex = mesh.vertices[tri.vertices[2]].selected;
+                    if (mesh.vertices[tri.vertices[0]].selected)
+                        ov0.selectedFlags |= GPUVertexData::FLAG_SELECTED_VERTEX;
+                    if (mesh.vertices[tri.vertices[1]].selected)
+                        ov1.selectedFlags |= GPUVertexData::FLAG_SELECTED_VERTEX;
+                    if (mesh.vertices[tri.vertices[2]].selected)
+                        ov2.selectedFlags |= GPUVertexData::FLAG_SELECTED_VERTEX;
                 }
+                
+                if (mesh.texcoords[tri.texcoords[0]].selected)
+                    ov0.selectedFlags |= GPUVertexData::FLAG_SELECTED_UV;
+                if (mesh.texcoords[tri.texcoords[1]].selected)
+                    ov1.selectedFlags |= GPUVertexData::FLAG_SELECTED_UV;
+                if (mesh.texcoords[tri.texcoords[2]].selected)
+                    ov2.selectedFlags |= GPUVertexData::FLAG_SELECTED_UV;
 
                 ov0.bary = { 0, 0, 0, 0 };
                 ov1.bary = { 1, 0, 0, 0 };
