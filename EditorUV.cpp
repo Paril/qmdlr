@@ -70,6 +70,48 @@ void EditorUV::Init()
     
     events().Register(EventType::AddSkin, [this](auto) { model().mutator().addSkin(); });
     events().Register(EventType::DeleteSkin, [this](auto) { model().mutator().deleteSkin(); });
+    
+    events().Register(EventType::Mirror, [this](auto) {
+        glm::mat4 invertMatrix = glm::identity<glm::mat4>();
+        auto &mdl = model().model();
+
+        auto skin = mdl.getSelectedSkin();
+
+        if (!skin)
+            return;
+
+        auto mutator = model().mutator();
+        glm::vec2 center {};
+        size_t num_center = 0;
+
+        for (auto &mesh : mdl.meshes)
+        {
+            auto selected = mutator.getSelectedTextureCoordinates(mesh, _uvSelectMode);
+
+            for (auto &v : selected)
+            {
+                center += mesh.texcoords[v].pos;
+                num_center++;
+            }
+        }
+
+        if (!num_center)
+            return;
+
+        center /= num_center;
+
+        float zoom = (float) ui().editorUV().scale();
+
+        invertMatrix = glm::translate(invertMatrix, { center.x, center.y, 0.0f });
+        invertMatrix = glm::scale(invertMatrix, glm::vec3(1.f / skin->width, 1.f / skin->height, 1.f));
+
+        invertMatrix = glm::scale(invertMatrix, { _uvAxis.X ? -1 : 1, _uvAxis.Y ? -1 : 1, 1 });
+
+        invertMatrix = glm::scale(invertMatrix, glm::vec3(skin->width, skin->height, 1.f));
+        invertMatrix = glm::translate(invertMatrix, { -center.x, -center.y, 0.0f });
+
+        mutator.applyUVMatrix(invertMatrix, _uvSelectMode);
+    }, EventContext::EditorUV);
 
 /*
 
@@ -344,6 +386,7 @@ void EditorUV::Draw()
         ImVec2 bottomRight { topLeft.x + ImGui::GetContentRegionAvail().x, topLeft.y + ImGui::GetContentRegionAvail().y };
 
         DrawUVToolBox();
+        DrawUVModify();
         DrawUVSkinSelector();
         DrawUVViewport();
     }
@@ -388,14 +431,39 @@ void EditorUV::DrawUVToolBox()
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         if (ImGui::qmdlr::CheckBoxButton("Vertex", _uvSelectMode == SelectMode::Vertex, ImVec2(-1, 0)))
-            events().Push(EventType::SelectMode_Vertex);
+            events().Push(EventType::SelectMode_Vertex, EventContext::EditorUV);
         ImGui::TableNextColumn();
         if (ImGui::qmdlr::CheckBoxButton("Face", _uvSelectMode == SelectMode::Face, ImVec2(-1, 0)))
-            events().Push(EventType::SelectMode_Face);
+            events().Push(EventType::SelectMode_Face, EventContext::EditorUV);
 
         ImGui::EndTable();
     }
     
+    ImGui::End();
+}
+
+void EditorUV::DrawUVModify()
+{
+    ImGui::Begin("UV Modify");
+
+    if (ImGui::Button("Mirror", ImVec2(-1, 0)))
+        events().Push(EventType::Mirror, EventContext::EditorUV);
+    if (ImGui::Button("Delete", ImVec2(-1, 0)))
+        events().Push(EventType::Delete, EventContext::EditorUV);
+
+    ImGui::SeparatorText("Face Tools");
+
+    if (_uvSelectMode != SelectMode::Face)
+        ImGui::BeginDisabled(true);
+    
+    if (ImGui::Button("Detach", ImVec2(-1, 0)))
+        events().Push(EventType::Detach, EventContext::EditorUV);
+    if (ImGui::Button("Remove Faces", ImVec2(-1, 0)))
+        events().Push(EventType::Remove, EventContext::EditorUV);
+
+    if (_uvSelectMode != SelectMode::Face)
+        ImGui::EndDisabled();
+
     ImGui::End();
 }
 

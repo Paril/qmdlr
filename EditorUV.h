@@ -38,6 +38,7 @@ public:
 private:
     // windows
     void DrawUVToolBox();
+    void DrawUVModify();
 	void DrawUVViewport();
     void DrawUVSkinSelector();
 

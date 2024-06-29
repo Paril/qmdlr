@@ -77,6 +77,11 @@
 	x(ExportSkin), \
  \
 	x(SyncSelection), \
+\
+	x(Mirror), \
+	x(Delete), \
+	x(Remove), \
+	x(Detach), \
  \
 	x(Last)
 

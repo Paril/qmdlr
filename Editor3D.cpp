@@ -378,10 +378,10 @@ void Editor3D::DrawToolBox()
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         if (ImGui::qmdlr::CheckBoxButton("Vertex", _editorSelectMode == SelectMode::Vertex, ImVec2(-1, 0)))
-            events().Push(EventType::SelectMode_Vertex);
+            events().Push(EventType::SelectMode_Vertex, EventContext::Editor3D);
         ImGui::TableNextColumn();
         if (ImGui::qmdlr::CheckBoxButton("Face", _editorSelectMode == SelectMode::Face, ImVec2(-1, 0)))
-            events().Push(EventType::SelectMode_Face);
+            events().Push(EventType::SelectMode_Face, EventContext::Editor3D);
 
         ImGui::EndTable();
     }

@@ -336,9 +336,9 @@ DockId=0x00000009,0
 
 [Window][UV Tools]
 Pos=773,57
-Size=127,606
+Size=127,224
 Collapsed=0
-DockId=0x0000000E,0
+DockId=0x00000011,0
 
 [Window][UV Viewport]
 Pos=0,57
@@ -363,11 +363,19 @@ Size=900,135
 Collapsed=0
 DockId=0x00000010,0
 
+[Window][UV Modify]
+Pos=773,283
+Size=127,380
+Collapsed=0
+DockId=0x00000012,0
+
 [Docking][Data]
 DockSpace           ID=0x6A83EA60 Window=0xF8A78665 Pos=510,197 Size=900,743 Split=Y
   DockNode          ID=0x0000000F Parent=0x6A83EA60 SizeRef=900,606 Split=X
     DockNode        ID=0x0000000D Parent=0x0000000F SizeRef=527,743 CentralNode=1 HiddenTabBar=1 Selected=0x6E3D3BE4
-    DockNode        ID=0x0000000E Parent=0x0000000F SizeRef=127,743 Selected=0x3216ECDF
+    DockNode        ID=0x0000000E Parent=0x0000000F SizeRef=127,743 Split=Y Selected=0x3216ECDF
+      DockNode      ID=0x00000011 Parent=0x0000000E SizeRef=127,224 Selected=0x3216ECDF
+      DockNode      ID=0x00000012 Parent=0x0000000E SizeRef=127,380 Selected=0x6EF76174
   DockNode          ID=0x00000010 Parent=0x6A83EA60 SizeRef=900,135 Selected=0x98C789CE
 DockSpace           ID=0x8B93E3BD Window=0xA787BDB4 Pos=510,159 Size=900,781 CentralNode=1 Selected=0x32A6375B
 DockSpace           ID=0xA785D97D Window=0xE940481D Pos=510,197 Size=900,743 Split=Y Selected=0x13926F0B
