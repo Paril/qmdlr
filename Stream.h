@@ -1,307 +1,500 @@
 #pragma once
 
-#include <istream>
-#include <ostream>
+template<typename T>
+concept is_stream_write_adapter = requires(T a, const void *data, size_t length)
+{
+    { a.write(data, length) };
+};
+
+template<typename T>
+concept is_stream_read_adapter = requires(T a, void *data, size_t length)
+{
+    { a.read(data, length) };
+};
+
+struct write_adapter
+{
+    virtual ~write_adapter() { }
+    virtual void write(const void *data, size_t length) = 0;
+};
+
+struct read_adapter
+{
+    virtual ~read_adapter() { }
+    virtual void read(void *data, size_t length) = 0;
+    virtual void skip(size_t length) = 0;
+};
+
+struct dummy_write_adapter : write_adapter
+{
+    virtual void write(const void *data, size_t length) override
+    {
+    }
+};
+
+struct dummy_read_adapter : read_adapter
+{
+    virtual void read(void *data, size_t length) override
+    {
+    }
+
+    virtual void skip(size_t length) override
+    {
+    }
+};
+
 #include <iostream>
-#include <bit>
 
-// Binary streams; by default, streams use the native endianness
-// (unchanged bytes) but can be changed to a specific endianness
-// with the manipulator below.
-namespace detail
+struct ostream_write_adapter : write_adapter
 {
-// 0 is the default for iwords
-enum class st_en : long
-{
-    na = 0,
-    le = 1,
-    be = 2,
+    std::ostream &stream;
+    
+    constexpr ostream_write_adapter(std::ostream &stream) :
+        stream(stream)
+    {
+    }
+
+    virtual void write(const void *data, size_t length) override
+    {
+        stream.write((const char *) data, length);
+    }
 };
 
-inline int32_t endian_i()
+struct istream_read_adapter : read_adapter
 {
-    static int32_t i = std::ios_base::xalloc();
-    return i;
-}
+    std::istream &stream;
 
-inline bool need_swap(std::ios_base &os)
-{
-    st_en e = static_cast<st_en>(os.iword(endian_i()));
-
-    // if we're in a "default state" of native endianness, we never
-    // need to swap.
-    if (e == st_en::na)
-        return false;
-
-    return (static_cast<int32_t>(e) - 1) != static_cast<int32_t>(std::endian::native);
-}
-
-template<typename T>
-inline std::ostream &write_swapped(std::ostream &s, const T &val)
-{
-    const char *pVal = reinterpret_cast<const char *>(&val);
-
-    if (need_swap(s))
+    constexpr istream_read_adapter(std::istream &stream) :
+        stream(stream)
     {
-        for (int32_t i = sizeof(T) - 1; i >= 0; i--)
-            s.write(&pVal[i], 1);
     }
-    else
-        s.write(pVal, sizeof(T));
 
-    return s;
-}
-
-template<typename T>
-inline std::istream &read_swapped(std::istream &s, T &val)
-{
-    char *pRetVal = reinterpret_cast<char *>(&val);
-
-    if (need_swap(s))
+    virtual void read(void *data, size_t length) override
     {
-        for (int32_t i = sizeof(T) - 1; i >= 0; i--)
-            s.read(&pRetVal[i], 1);
+        stream.read((char *) data, length);
     }
-    else
-        s.read(pRetVal, sizeof(T));
 
-    return s;
-}
-} // namespace detail
-
-template<std::endian e>
-inline std::ios_base &endianness(std::ios_base &os)
-{
-    os.iword(detail::endian_i()) = static_cast<int32_t>(e) + 1;
-    return os;
-}
-
-// blank type used for paddings
-template<size_t n>
-struct padding
-{
+    virtual void skip(size_t length) override
+    {
+        stream.seekg(length, std::ios_base::cur);
+    }
 };
 
-struct padding_n
-{
-    size_t n;
+#include <vector>
 
-    constexpr padding_n(size_t np)
-        : n(np)
+struct vector_write_adapter : write_adapter
+{
+    std::vector<uint8_t> data;
+
+    virtual void write(const void *in_data, size_t length) override
     {
+        std::copy_n((const uint8_t *) in_data, length, std::back_inserter(data));
+    }
+};
+
+struct vector_read_adapter : read_adapter
+{
+    const std::vector<uint8_t> &data;
+    std::vector<uint8_t>::const_iterator it;
+
+    constexpr vector_read_adapter(const std::vector<uint8_t> &data) :
+        data(data),
+        it(data.begin())
+    {
+    }
+    
+    virtual void read(void *out_data, size_t length) override
+    {
+        std::copy_n(it, length, (uint8_t *) out_data);
+        it += length;
+    }
+
+    virtual void skip(size_t length) override
+    {
+        it += length;
     }
 };
 
 template<typename T>
-concept IsStreamBinaryWriteCapable = requires(const T &a, std::ostream &o)
+struct serialize_impl : public std::false_type
 {
-    { o <= a };
+    template<is_stream_write_adapter TW>
+    static void write(TW &a, const T)
+    {
+        static_assert(false, "T has no serialize writer!");
+    }
+
+    template<is_stream_read_adapter TR>
+    static void read(TR &, T)
+    {
+        static_assert(false, "T has no serialize reader!");
+    }
 };
 
 template<typename T>
-concept IsStreamBinaryReadCapable = requires(T &a, std::istream &i)
-{
-    { i >= a };
-};
+concept is_serializable = serialize_impl<std::remove_reference_t<T>>::value;
 
-template<size_t n>
-inline std::ostream &operator<=(std::ostream &s, const padding<n> &)
-{
-    for (size_t i = 0; i < n; i++)
-        s.put(0);
+template<typename... T>
+concept all_are_serializable =
+    ((is_serializable<T>) && ...);
 
-    return s;
+template<is_stream_write_adapter TW, typename... T> requires all_are_serializable<T...>
+void serialize_write(TW &writer, const T &...value)
+{
+    ((serialize_impl<T>::write(writer, value)), ...);
 }
 
-inline std::ostream &operator<=(std::ostream &s, const padding_n &p)
+template<is_stream_read_adapter TR, typename... T> requires all_are_serializable<T...>
+void serialize_read(TR &reader, T &...value)
 {
-    for (size_t i = 0; i < p.n; i++)
-        s.put(0);
-
-    return s;
+    ((serialize_impl<T>::read(reader, value)), ...);
 }
-
-template<size_t n>
-inline std::istream &operator>=(std::istream &s, padding<n> &)
-{
-    s.seekg(n, std::ios_base::cur);
-
-    return s;
-}
-
-template<size_t n>
-inline std::istream &operator>=(std::istream &s, padding_n &p)
-{
-    s.seekg(p.n, std::ios_base::cur);
-
-    return s;
-}
-
-template<typename T>
-struct is_trivially_streamable : public std::false_type {};
-
-template<typename T>
-concept IsDefaultTriviallyStreamable = std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>;
-
-template<IsDefaultTriviallyStreamable T>
-struct is_trivially_streamable<T> : public std::true_type {};
-
-template<typename T>
-inline constexpr bool is_trivially_streamable_v = is_trivially_streamable<T>::value;
-
-template<typename T>
-concept IsTriviallyStreamable = is_trivially_streamable_v<T>;
-
-template<IsTriviallyStreamable T>
-inline std::istream &operator>=(std::istream &stream, T &value)
-{
-	return detail::read_swapped(stream, value);
-}
-
-template<IsTriviallyStreamable T>
-inline std::ostream &operator<=(std::ostream &stream, const T &value)
-{
-	return detail::write_swapped(stream, value);
-}
-
-// string stuff
-enum class str_style : long
-{
-    unset = 0, // initial value (same as pr64)
-    sz = 1,    // null terminated
-    pr8 = 2,   // length-prefixed (8-bit)
-    pr16 = 3,  // length-prefixed (16-bit)
-    pr32 = 4,  // length-prefixed (32-bit)
-    pr64 = 5,  // length-prefixed (64-bit)
-};
-
-#include <string>
 
 namespace detail
 {
-inline int32_t stringstyle_i()
-{
-    static int32_t i = std::ios_base::xalloc();
-    return i;
-}
-
-inline str_style stringstyle(std::ios_base &os)
-{
-    return static_cast<str_style>(os.iword(stringstyle_i()));
-}
-
-template<typename T>
-inline void string_read(std::istream &stream, std::string &value)
-{
-    T size;
-    stream >= size;
-    value.resize(static_cast<T>(size));
-    stream.read(value.data(), size);
-}
-
-template<typename T>
-inline void string_write(std::ostream &stream, const char *value, size_t len)
-{
-    if (len > std::numeric_limits<T>::max())
-        throw std::runtime_error("string exceeds PR limit");
-
-    stream <= static_cast<T>(len);
-    stream.write(value, len);
-}
-} // namespace detail
-
-template<str_style s>
-inline std::ios_base &stringstyle(std::ios_base &os)
-{
-    os.iword(detail::stringstyle_i()) = static_cast<int32_t>(s);
-    return os;
-}
-
-inline std::ostream &operator<=(std::ostream &stream, const char *value)
-{
-    str_style style = detail::stringstyle(stream);
-
-    if (style == str_style::unset)
-        style = str_style::pr64;
-
-    size_t len = strlen(value);
-
-    if (style == str_style::sz)
+    template<typename T>
+    struct serialize_primitive : public std::true_type
     {
-        stream.write(value, len);
-        stream.write("\0", 1);
-    }
-    else if (style == str_style::pr8)
-        detail::string_write<uint8_t>(stream, value, len);
-    else if (style == str_style::pr16)
-        detail::string_write<uint16_t>(stream, value, len);
-    else if (style == str_style::pr32)
-        detail::string_write<uint32_t>(stream, value, len);
-    else if (style == str_style::pr64)
-        detail::string_write<uint64_t>(stream, value, len);
-
-    return stream;
-}
-
-
-inline std::istream &operator>=(std::istream &stream, std::string &value)
-{
-    str_style style = detail::stringstyle(stream);
-
-    if (style == str_style::unset)
-        style = str_style::pr64;
-
-    if (style == str_style::sz)
-    {
-        value.clear();
-
-        char c = '\0';
-
-        while (stream.good())
+        template<is_stream_write_adapter TW>
+        static void write(TW &writer, const T &vec)
         {
-            stream.read(&c, 1);
+            writer.write(&vec, sizeof(T));
+        }
+    
+        template<is_stream_read_adapter TR>
+        static void read(TR &reader, T &vec)
+        {
+            reader.read(&vec, sizeof(T));
+        }
+    };
+}
 
-            if (!stream.good() || c == '\0')
-                break;
+template<> struct serialize_impl<uint8_t> : public detail::serialize_primitive<uint8_t> {};
+template<> struct serialize_impl<uint16_t> : public detail::serialize_primitive<uint16_t> {};
+template<> struct serialize_impl<uint32_t> : public detail::serialize_primitive<uint32_t> {};
+template<> struct serialize_impl<uint64_t> : public detail::serialize_primitive<uint64_t> {};
+template<> struct serialize_impl<int8_t> : public detail::serialize_primitive<int8_t> {};
+template<> struct serialize_impl<int16_t> : public detail::serialize_primitive<int16_t> {};
+template<> struct serialize_impl<int32_t> : public detail::serialize_primitive<int32_t> {};
+template<> struct serialize_impl<int64_t> : public detail::serialize_primitive<int64_t> {};
+template<> struct serialize_impl<bool> : public detail::serialize_primitive<bool> {};
+template<> struct serialize_impl<float> : public detail::serialize_primitive<float> {};
+template<> struct serialize_impl<double> : public detail::serialize_primitive<double> {};
 
-            value.push_back(c);
+template<typename T>
+concept is_enum = std::is_enum_v<T>;
+
+template<is_enum T> struct serialize_impl<T> : public detail::serialize_primitive<T> {};
+
+// support for tuple<T&> and tuple<T> &
+#include <tuple>
+
+template<typename ...Args> requires all_are_serializable<Args...>
+struct serialize_impl<std::tuple<Args &...>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const std::tuple<Args &...> vec)
+    {
+        std::apply([&](auto &&...args) {
+            (serialize_write(writer, args), ...);
+        }, vec);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, std::tuple<Args &...> vec)
+    {
+        std::apply([&](auto &&...args) {
+            (serialize_read(reader, args), ...);
+        }, vec);
+    }
+};
+
+template<typename ...Args> requires all_are_serializable<Args...>
+struct serialize_impl<std::tuple<Args...>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const std::tuple<Args...> &vec)
+    {
+        std::apply([&](auto &&...args) {
+            (serialize_write(writer, args), ...);
+        }, vec);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, std::tuple<Args...> &vec)
+    {
+        std::apply([&](auto &&...args) {
+            (serialize_read(reader, args), ...);
+        }, vec);
+    }
+};
+
+// support for optional
+#include <optional>
+
+template<typename T> requires is_serializable<T>
+struct serialize_impl<std::optional<T>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const std::optional<T> &vec)
+    {
+        if (!vec.has_value())
+            serialize_write(writer, false);
+        else
+        {
+            serialize_write(writer, true);
+            serialize_write(writer, vec.value());
         }
     }
-    else if (style == str_style::pr8)
-        detail::string_read<uint8_t>(stream, value);
-    else if (style == str_style::pr16)
-        detail::string_read<uint16_t>(stream, value);
-    else if (style == str_style::pr32)
-        detail::string_read<uint32_t>(stream, value);
-    else if (style == str_style::pr64)
-        detail::string_read<uint64_t>(stream, value);
-
-    return stream;
-}
-
-inline std::ostream &operator<=(std::ostream &stream, const std::string &value)
-{
-    str_style style = detail::stringstyle(stream);
-
-    if (style == str_style::unset)
-        style = str_style::pr64;
-
-    if (style == str_style::sz)
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, std::optional<T> &vec)
     {
-        stream.write(value.c_str(), value.size());
-        stream.write("\0", 1);
-    }
-    else if (style == str_style::pr8)
-        detail::string_write<uint8_t>(stream, value.c_str(), value.size());
-    else if (style == str_style::pr16)
-        detail::string_write<uint16_t>(stream, value.c_str(), value.size());
-    else if (style == str_style::pr32)
-        detail::string_write<uint32_t>(stream, value.c_str(), value.size());
-    else if (style == str_style::pr64)
-        detail::string_write<uint64_t>(stream, value.c_str(), value.size());
+        bool has_value;
+        serialize_read(reader, has_value);
 
-    return stream;
-}
+        if (has_value)
+            serialize_read(reader, vec.emplace());
+        else
+            vec = std::nullopt;
+    }
+};
+
+// support for array
+#include <array>
+
+template<typename T, size_t N> requires is_serializable<T>
+struct serialize_impl<std::array<T, N>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const std::array<T, N> &vec)
+    {
+        for (auto &val : vec)
+            serialize_write(writer, val);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, std::array<T, N> &vec)
+    {
+        for (auto &val : vec)
+            serialize_read(reader, val);
+    }
+};
+
+// support for glm
+#include <glm/common.hpp>
+
+template<size_t N, typename T, glm::qualifier Q> requires is_serializable<T>
+struct serialize_impl<glm::vec<N, T, Q>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const glm::vec<N, T, Q> &vec)
+    {
+        for (size_t i = 0; i < vec.length(); i++)
+            serialize_write(writer, vec[i]);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, glm::vec<N, T, Q> &vec)
+    {
+        for (size_t i = 0; i < vec.length(); i++)
+            serialize_read(reader, vec[i]);
+    }
+};
+
+#include <glm/ext/matrix_common.hpp>
+
+template<glm::length_t C, glm::length_t R, typename T, glm::qualifier Q> requires is_serializable<T>
+struct serialize_impl<glm::mat<C, R, T, Q>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const glm::mat<C, R, T, Q> &mat)
+    {
+        for (size_t i = 0; i < mat.length(); i++)
+            serialize_write(writer, mat[i]);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, glm::mat<C, R, T, Q> &mat)
+    {
+        for (size_t i = 0; i < mat.length(); i++)
+            serialize_read(reader, mat[i]);
+    }
+};
+
+#include <glm/ext/quaternion_common.hpp>
+
+template<typename T, glm::qualifier Q> requires is_serializable<T>
+struct serialize_impl<glm::qua<T, Q>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const glm::qua<T, Q> &q)
+    {
+        for (glm::length_t i = 0; i < q.length(); i++)
+            serialize_write(writer, q[i]);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, glm::qua<T, Q> &q)
+    {
+        for (glm::length_t i = 0; i < q.length(); i++)
+            serialize_read(reader, q[i]);
+    }
+};
+
+// support for string
+#include <string>
+
+template<>
+struct serialize_impl<std::string> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const std::string &vec)
+    {
+        serialize_write(writer, vec.size());
+        writer.write(vec.data(), vec.size());
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, std::string &vec)
+    {
+        size_t s;
+        serialize_read(reader, s);
+
+        vec.resize(s);
+        reader.read(vec.data(), s);
+    }
+};
+
+template<>
+struct serialize_impl<const char *> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const char *vec)
+    {
+        if (!vec)
+        {
+            serialize_write(writer, (size_t) 0);
+            return;
+        }
+
+        size_t l = strlen(vec);
+        serialize_write(writer, l);
+        writer.write(vec, l);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, const char *vec)
+    {
+        throw std::runtime_error("todo: remove me at compile time");
+    }
+};
+
+// support for vector
+#include <vector>
+
+template<typename T> requires is_serializable<T>
+struct serialize_impl<std::vector<T>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const std::vector<T> &vec)
+    {
+        serialize_write(writer, vec.size());
+        for (auto &val : vec)
+            serialize_write(writer, val);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, std::vector<T> &vec)
+    {
+        size_t s;
+        serialize_read(reader, s);
+        vec.resize(s);
+        for (auto &val : vec)
+            serialize_read(reader, val);
+    }
+};
+
+// support for dynamic_bitset
+#include <sul/dynamic_bitset.hpp>
+
+template<typename T> requires is_serializable<T>
+struct serialize_impl<sul::dynamic_bitset<T>> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const sul::dynamic_bitset<T> &vec)
+    {
+        serialize_write(writer, vec.size());
+        writer.write(vec.data(), vec.num_blocks() * sizeof(T));
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, sul::dynamic_bitset<T> &vec)
+    {
+        size_t s;
+        serialize_read(reader, s);
+        vec.resize(s);
+        reader.read(vec.data(), vec.num_blocks() * sizeof(T));
+    }
+};
+
+// support for T::stream_data
+template<typename T>
+concept has_stream_data = requires(T a)
+{
+    { a.stream_data() }; // TODO not_void?
+};
+
+template<has_stream_data T>
+struct serialize_impl<T> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const T &vec)
+    {
+        T &mutable_vec = const_cast<T &>(vec);
+        using as_mutable = decltype(mutable_vec.stream_data());
+        serialize_impl<as_mutable>::write(writer, mutable_vec.stream_data());
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, T &vec)
+    {
+        using data_type = decltype(vec.stream_data());
+        serialize_impl<data_type>::read(reader, vec.stream_data());
+    }
+};
+
+// support for T::stream_read / T::stream_write
+template<typename T>
+concept has_stream_write = requires(const T &a, dummy_write_adapter &adapter)
+{
+    { a.stream_write(adapter) };
+};
+
+template<typename T>
+concept has_stream_read = requires(T &a, dummy_read_adapter &adapter)
+{
+    { a.stream_read(adapter) };
+};
+
+template<typename T>
+concept has_stream_readwrite = has_stream_write<T> && has_stream_read<T>;
+
+template<has_stream_readwrite T>
+struct serialize_impl<T> : public std::true_type
+{
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const T &vec)
+    {
+        vec.stream_write(writer);
+    }
+
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, T &vec)
+    {
+        vec.stream_read(reader);
+    }
+};
 
 // C-string support for formats that have fixed
 // length strings
@@ -315,275 +508,69 @@ struct cstring_t
 };
 
 template<size_t N>
-inline std::istream &operator>=(std::istream &stream, cstring_t<N> &value)
+struct serialize_impl<cstring_t<N>> : public std::true_type
 {
-    stream.read(value.c_str(), N);
-    value.data[N - 1] = '\0';
-	return stream;
-}
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const cstring_t<N> &value)
+    {
+        writer.write(value.c_str(), N);
+    }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, cstring_t<N> &value)
+    {
+        reader.read(value.c_str(), N);
+        value.data[N - 1] = '\0';
+    }
+};
+
+// fixed paddings
+template<size_t n>
+struct padding_t { };
 
 template<size_t N>
-inline std::ostream &operator<=(std::ostream &stream, const cstring_t<N> &value)
+struct serialize_impl<padding_t<N>> : public std::true_type
 {
-    return stream.write(value.c_str(), N);
-}
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const padding_t<N> &value)
+    {
+        static constexpr uint8_t padding = 0;
 
-// support for std::array
-#include <array>
-
-template<typename T, size_t N>
-inline std::ostream &operator<=(std::ostream &s, const std::array<T, N> &c)
-{
-    for (auto &v : c)
-        s <= v;
-
-    return s;
-}
-
-template<typename T, size_t N>
-inline std::istream &operator>=(std::istream &s, std::array<T, N> &c)
-{
-    for (auto &v : c)
-        s >= v;
-
-    return s;
-}
-
-// support for std::tuple
-#include <tuple>
-
-template<typename... T>
-concept AreAllStreamBinaryReadCapable =
-    ((IsStreamBinaryReadCapable<T>) && ...);
-
-template<typename... T>
-concept AreAllStreamBinaryWriteCapable =
-    ((IsStreamBinaryWriteCapable<T>) && ...);
-
-template<typename... T> requires AreAllStreamBinaryWriteCapable<T...>
-inline std::ostream &operator<=(std::ostream &s, const std::tuple<T &...> tuple)
-{
-    std::apply([&s](auto &&...args) {
-        ((s <= args), ...);
-    }, tuple);
-    return s;
-}
-
-template<typename... T> requires AreAllStreamBinaryReadCapable<T...>
-inline std::istream &operator>=(std::istream &s, std::tuple<T &...> tuple)
-{
-    std::apply([&s](auto &&...args) {
-        ((s >= args), ...);
-    }, tuple);
-    return s;
-}
-
-// support for T::stream_data
-template<typename T>
-concept IsStreamDataCapable = requires(T a)
-{
-    { a.stream_data() };
-};
-
-template<IsStreamDataCapable T>
-inline std::ostream &operator<=(std::ostream &s, const T &object)
-{
-    return s <= const_cast<T &>(object).stream_data();
-}
-
-template<IsStreamDataCapable T>
-inline std::istream &operator>=(std::istream &s, T &object)
-{
-    return s >= object.stream_data();
-}
-
-// support for T::stream_read / T::stream_write
-template<typename T>
-concept IsStreamWriteCapable = requires(const T &a, std::ostream &i)
-{
-    { a.stream_write(i) };
-};
-
-template<IsStreamWriteCapable T>
-inline std::ostream &operator<=(std::ostream &s, const T &object)
-{
-    object.stream_write(s);
-    return s;
-}
-
-template<typename T>
-concept IsStreamReadCapable = requires(T &a, std::istream &i)
-{
-    { a.stream_read(i) };
-};
-
-template<IsStreamReadCapable T>
-inline std::istream &operator>=(std::istream &s, T &object)
-{
-    object.stream_read(s);
-    return s;
-}
-
-// support for glm::vec
-#include <glm/common.hpp>
-
-template<glm::length_t L, typename T, glm::qualifier Q>
-inline std::ostream &operator<=(std::ostream &s, const glm::vec<L, T, Q> &object)
-{
-    for (glm::length_t i = 0; i < L; i++)
-        s <= object[i];
-
-    return s;
-}
-
-template<glm::length_t L, typename T, glm::qualifier Q>
-inline std::istream &operator>=(std::istream &s, glm::vec<L, T, Q> &object)
-{
-    for (glm::length_t i = 0; i < L; i++)
-        s >= object[i];
-
-    return s;
-}
-
-template<glm::length_t C, glm::length_t R, typename T, glm::qualifier Q>
-inline std::ostream &operator<=(std::ostream &s, const glm::mat<C, R, T, Q> &object)
-{
-    for (glm::length_t x = 0; x < C; x++)
-        for (glm::length_t y = 0; y < R; y++)
-            s <= object[x][y];
-
-    return s;
-}
-
-template<glm::length_t C, glm::length_t R, typename T, glm::qualifier Q>
-inline std::istream &operator>=(std::istream &s, glm::mat<C, R, T, Q> &object)
-{
-    for (glm::length_t x = 0; x < C; x++)
-        for (glm::length_t y = 0; y < R; y++)
-            s >= object[x][y];
-
-    return s;
-}
-
-// support for glm::quat
-#include <glm/ext/quaternion_common.hpp>
-
-template<typename T, glm::qualifier Q>
-inline std::ostream &operator<=(std::ostream &s, const glm::qua<T, Q> &object)
-{
-    for (glm::length_t i = 0; i < 4; i++)
-        s <= object[i];
-
-    return s;
-}
-
-template<typename T, glm::qualifier Q>
-inline std::istream &operator>=(std::istream &s, glm::qua<T, Q> &object)
-{
-    for (glm::length_t i = 0; i < 4; i++)
-        s >= object[i];
-
-    return s;
-}
-
-// support for vectors
-#include <vector>
-
-template<typename T>
-concept IsStreamReadableVector = requires(T a)
-{
-    typename T::value_type;
-    requires std::is_same_v<T, std::vector<typename T::value_type>>;
-    requires IsStreamBinaryReadCapable<decltype(a[0])>;
-};
-
-template<typename T>
-concept IsStreamWritableVector = requires(T a)
-{
-    typename T::value_type;
-    requires std::is_same_v<T, std::vector<typename T::value_type>>;
-    requires IsStreamBinaryWriteCapable<decltype(a[0])>;
-};
-
-template<IsStreamWritableVector T>
-inline std::ostream &operator<=(std::ostream &s, const T &object)
-{
-    s <= object.size();
+        for (size_t i = 0; i < N; i++)
+            writer.write(&padding, 1);
+    }
     
-    for (auto &v : object)
-        s <= v;
-
-    return s;
-}
-
-template<IsStreamReadableVector T>
-inline std::istream &operator>=(std::istream &s, T &object)
-{
-    using st = typename T::size_type;
-    st size;
-
-    s >= size;
-
-    object.resize(size);
-
-    for (auto &v : object)
-        s >= v;
-
-    return s;
-}
-
-// support for optional
-#include <optional>
-
-template<typename T> requires IsStreamBinaryWriteCapable<T>
-inline std::ostream &operator<=(std::ostream &s, const std::optional<T> &object)
-{
-    if (!object.has_value())
-        s <= false;
-    else
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, padding_t<N> &value)
     {
-        s <= true;
-        s <= object.value();
+        uint8_t b;
+
+        for (size_t i = 0; i < N; i++)
+            reader.read(&b, 1);
     }
+};
 
-    return s;
-}
+// dynamic padding
+struct padding_n { size_t n; };
 
-template<typename T> requires IsStreamBinaryReadCapable<T>
-inline std::istream &operator>=(std::istream &s, std::optional<T> &object)
+template<>
+struct serialize_impl<padding_n> : public std::true_type
 {
-    bool set;
-    s >= set;
-
-    if (!set)
-        object = std::nullopt;
-    else
+    template<is_stream_write_adapter TW>
+    static void write(TW &writer, const padding_n &value)
     {
-        object = T();
-        s >= object.value();
+        static constexpr uint8_t padding = 0;
+
+        for (size_t i = 0; i < value.n; i++)
+            writer.write(&padding, 1);
     }
+    
+    template<is_stream_read_adapter TR>
+    static void read(TR &reader, padding_n &value)
+    {
+        uint8_t b;
 
-    return s;
-}
-
-// dynamic_bitset support
-#include <sul/dynamic_bitset.hpp>
-
-template<typename T>
-inline std::ostream &operator<=(std::ostream &s, const sul::dynamic_bitset<T> &object)
-{
-    s <= object.num_blocks();
-    s.write((const char *) object.data(), object.num_blocks() * sizeof(T));
-    return s;
-}
-
-template<typename T>
-inline std::istream &operator>=(std::istream &s, sul::dynamic_bitset<T> &object)
-{
-    size_t num_blocks;
-    s >= num_blocks;
-
-    object.resize(num_blocks * object.bits_per_block);
-    s.read((char *) object.data(), num_blocks * sizeof(T));
-    return s;
-}
+        for (size_t i = 0; i < value.n; i++)
+            reader.read(&b, 1);
+    }
+};

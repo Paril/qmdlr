@@ -86,15 +86,15 @@ using theme_color_array = enum_array<Color, EditorColorId>;
 static constexpr theme_color_array EditorColorDefaults = {
 	Color(135, 107, 87),
 	Color(255, 235, 31),
-	Color(255, 255, 255),
+	Color(255, 255, 255, 66),
 	Color(255, 235, 31),
 	Color(0, 0, 0),
 	Color(255, 171, 7),
 
 	Color(235, 159, 39),
 	Color(255, 235, 31),
-	Color(255, 255, 255),
-	Color(255, 235, 31),
+	Color(255, 255, 255, 66),
+	Color(255, 235, 31, 255),
 	Color(0, 0, 0),
 	Color(255, 171, 7),
 

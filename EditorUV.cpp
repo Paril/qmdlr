@@ -72,6 +72,7 @@ void EditorUV::Init()
     events().Register(EventType::DeleteSkin, [this](auto) { model().mutator().deleteSkin(); });
     
     events().Register(EventType::Mirror, [this](auto) {
+        // TODO: move to mutator
         glm::mat4 invertMatrix = glm::identity<glm::mat4>();
         auto &mdl = model().model();
 
@@ -112,44 +113,23 @@ void EditorUV::Init()
 
         mutator.applyUVMatrix(invertMatrix, _uvSelectMode);
     }, EventContext::EditorUV);
+    
+    events().Register(EventType::Delete, [this](auto) {
+        if (_uvSelectMode == SelectMode::Face)
+            model().mutator().deleteSelectedUVFaces(true);
+        else
+            model().mutator().deleteSelectedUVVertices();
+    }, EventContext::EditorUV);
+    
+    events().Register(EventType::Remove, [this](auto) {
+        if (_uvSelectMode == SelectMode::Face)
+            model().mutator().deleteSelectedUVFaces(false);
+    }, EventContext::EditorUV);
+    
+    events().Register(EventType::CleanVertices, [this](auto) {
+        model().mutator().cleanUVVertices();
+    }, EventContext::EditorUV);
 
-/*
-
-    static constexpr nfdfilteritem_t filterItem[] = {
-        { "Supported", "md2,mdl,qim" },
-        { "Quake II MD2", "md2" },
-        { "Quake MDL", "mdl" },
-        { "QMDLR Model", "qim" },
-    };
-
-    events().Register(EventType::Open, [this](auto) {
-        nfdchar_t *outPath;
-        nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, std::size(filterItem), settings().modelDialogLocation.c_str());
-        if (result == NFD_OKAY)
-        {
-            settings().modelDialogLocation = outPath;
-            model().Load(std::filesystem::path(outPath));
-            NFD_FreePath(outPath);
-        }
-    });
-
-    events().Register(EventType::SaveAs, [this](auto) {
-        nfdchar_t *outPath;
-        nfdfilteritem_t filterItem[] = {
-            { "Supported", "md2,mdl,qim" },
-            { "Quake II MD2", "md2" },
-            { "Quake MDL", "mdl" },
-            { "QMDLR Model", "qim" },
-        };
-        nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, std::size(filterItem), settings().modelDialogLocation.c_str(), nullptr);
-        if (result == NFD_OKAY)
-        {
-            settings().modelDialogLocation = outPath;
-            model().Save(std::filesystem::path(outPath));
-            NFD_FreePath(outPath);
-        }
-    });
-*/
     events().Register(EventType::ImportSkin, [this](auto) {
         nfdchar_t *inPath;
         nfdresult_t result = NFD_OpenDialog(&inPath, images().SupportedFormats().data(), images().SupportedFormats().size(), settings().modelDialogLocation.c_str());
@@ -450,6 +430,8 @@ void EditorUV::DrawUVModify()
         events().Push(EventType::Mirror, EventContext::EditorUV);
     if (ImGui::Button("Delete", ImVec2(-1, 0)))
         events().Push(EventType::Delete, EventContext::EditorUV);
+    if (ImGui::Button("Clean Verts", ImVec2(-1, 0)))
+        events().Push(EventType::CleanVertices, EventContext::EditorUV);
 
     ImGui::SeparatorText("Face Tools");
 

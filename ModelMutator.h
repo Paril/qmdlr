@@ -90,6 +90,15 @@ public:
     void apply3DMatrix(const glm::mat4 &matrix, SelectMode mode);
 #pragma endregion
 
+#pragma region(Delete UVs)
+private:
+    void cleanupUVVertices(bool onlySelected, SelectMode selectMode);
+public:
+    void deleteSelectedUVVertices();
+    void cleanUVVertices();
+    void deleteSelectedUVFaces(bool alsoDeleteVertices);
+#pragma endregion
+
     // return a fixed set of texture coordinate indices that are
     // currently considered "selected" - that is to say, they will
     // be adjusted if an operation occurs.

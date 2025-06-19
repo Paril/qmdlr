@@ -625,6 +625,8 @@ void UI::DrawMainMenu()
         ImGui::EndMenu();
     }
 
+    std::optional<size_t> undoRedoSize;
+
     if (ImGui::BeginMenu("Edit"))
     {
         // run deferred here to keep menu up to date
@@ -720,7 +722,16 @@ void UI::DrawMainMenu()
 
         // TODO split into function
         StackFormat<15> size;
-        size_t undoSize = undo().Size();
+
+        if (!undoRedoSize.has_value())
+        {
+            size_t sz = 0;
+
+            for (auto it = undo().List().begin(); it != undo().List().end(); it++)
+                sz += (*it)->Size();
+
+            undoRedoSize = sz;
+        }
 
         struct {
             size_t      ratio;
@@ -734,12 +745,12 @@ void UI::DrawMainMenu()
 
         for (auto &ratio : labels)
         {
-            if (undoSize >= ratio.ratio)
+            if (undoRedoSize.value() >= ratio.ratio)
             {
                 if (ratio.ratio)
-                    size.Format("{:02} {}", (double) undoSize / ratio.ratio, ratio.label);
+                    size.Format("{:02} {}", (double) undoRedoSize.value() / ratio.ratio, ratio.label);
                 else
-                    size.Format("{} {}", undoSize, ratio.label);
+                    size.Format("{} {}", undoRedoSize.value(), ratio.label);
 
                 break;
             }
@@ -752,6 +763,10 @@ void UI::DrawMainMenu()
         ImGui::MenuItem("Paste", "V");
         ImGui::MenuItem("Paste to Range", "B");
         ImGui::EndMenu();
+    }
+    else
+    {
+        undoRedoSize.reset();
     }
 
     if (ImGui::BeginMenu("Options"))

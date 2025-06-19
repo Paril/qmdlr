@@ -36,17 +36,21 @@ public:
         return "Frame Changed";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= from >= to;
+        serialize_read(input, from);
+        serialize_read(input, to);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= from <= to;
+        serialize_write(output, from);
+        serialize_write(output, to);
     }
 
     virtual size_t Size() const override { return sizeof(*this); }
+
+    virtual bool AutoRedo() const override { return false; }
 
 	SET_UNDO_REDO_ID(UndoRedoStateFrameChanged)
 
@@ -99,17 +103,21 @@ public:
         return "Frame Name Changed";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= from >= to;
+        serialize_read(input, from);
+        serialize_read(input, to);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= from <= to;
+        serialize_write(output, from);
+        serialize_write(output, to);
     }
 
     virtual size_t Size() const override { return sizeof(*this) + from.size() + to.size() + 2; }
+
+    virtual bool AutoRedo() const override { return false; }
 
 	SET_UNDO_REDO_ID(UndoRedoStateFrameNameChanged)
 
@@ -162,17 +170,21 @@ public:
         return "Skin Changed";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= from >= to;
+        serialize_read(input, from);
+        serialize_read(input, to);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= from <= to;
+        serialize_write(output, from);
+        serialize_write(output, to);
     }
 
     virtual size_t Size() const override { return sizeof(*this); }
+
+    virtual bool AutoRedo() const override { return false; }
 
 	SET_UNDO_REDO_ID(UndoRedoStateSkinChanged)
 
@@ -224,17 +236,21 @@ public:
         return "Skin Name Changed";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= from >= to;
+        serialize_read(input, from);
+        serialize_read(input, to);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= from <= to;
+        serialize_write(output, from);
+        serialize_write(output, to);
     }
 
     virtual size_t Size() const override { return sizeof(*this) + from.size() + to.size() + 2; }
+
+    virtual bool AutoRedo() const override { return false; }
 
 	SET_UNDO_REDO_ID(UndoRedoStateSkinNameChanged)
 
@@ -300,11 +316,11 @@ public:
         return "Skin Added";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
     }
 
@@ -319,17 +335,8 @@ void ModelMutator::addSkin()
 {
     undo().BeginCombined();
 
-    {
-        auto state = new UndoRedoStateAddSkin();
-        state->Redo(model().mutator().data);
-        undo().Push(state);
-    }
-
-    {
-        auto state = new UndoRedoStateSkinChanged(model().model().selectedMesh, (int) (model().model().skins.size() - 1));
-        state->Redo(model().mutator().data);
-        undo().Push(state);
-    }
+    undo().Push(new UndoRedoStateAddSkin());
+    undo().Push(new UndoRedoStateSkinChanged(model().model().selectedMesh, (int) (model().model().skins.size() - 1)));
 
     undo().EndCombined();
 }
@@ -375,8 +382,6 @@ public:
                 data->selectedSkin = (int) (skins.size() - 1);
         }
 
-        CalculateSize();
-
         ui().editor3D().renderer().markBufferDirty();
     }
 
@@ -385,34 +390,25 @@ public:
         return "Skin Deleted";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= index;
-        input >= skin;
-
-        CalculateSize();
+        serialize_read(input, index);
+        serialize_read(input, skin);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= index;
-        output <= skin;
+        serialize_write(output, index);
+        serialize_write(output, skin);
     }
 
-    virtual size_t Size() const override { return _size; }
+    virtual size_t Size() const override { return sizeof(*this) + skin.image.data_size(); }
 
 	SET_UNDO_REDO_ID(UndoRedoStateDeleteSkin)
 
 private:
-    void CalculateSize()
-    {
-        _size = sizeof(*this);
-        _size += skin.image.data_size();
-    }
-
     int32_t   index;
     ModelSkin skin;
-    size_t    _size = 0;
 };
 
 REGISTER_UNDO_REDO_ID(UndoRedoStateDeleteSkin);
@@ -422,9 +418,7 @@ void ModelMutator::deleteSkin()
     if (!model().model().selectedSkin.has_value())
         return;
 
-    auto state = new UndoRedoStateDeleteSkin(model().model().selectedSkin.value());
-    state->Redo(model().mutator().data);
-    undo().Push(state);
+    undo().Push(new UndoRedoStateDeleteSkin(model().model().selectedSkin.value()));
 }
 
 class UndoRedoStateResizeSkin : public UndoRedoState
@@ -461,8 +455,6 @@ public:
                 for (auto &tc : mesh.texcoords)
                     tc.pos = uvData[i++];
         }
-
-        CalculateSize(data);
 
         // destroy the resized skin; we'll recreate it on undo.
         skin = {};
@@ -504,8 +496,6 @@ public:
         std::swap(newSkin, oldSkin);
         skin = std::move(newSkin);
 
-        CalculateSize(data);
-
         ui().editor3D().renderer().markBufferDirty();
     }
 
@@ -514,34 +504,30 @@ public:
         return "Skin Resized";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= index >= width >= height >= resizeUVs >= resizeImage;
-        input >= skin;
-        input >= uvData;
-
-        CalculateSize(model().mutator().data);
+        serialize_read(input, index, width, height, resizeUVs, resizeImage);
+        serialize_read(input, skin);
+        serialize_read(input, uvData);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= index <= width <= height <= resizeUVs <= resizeImage;
-        output <= skin;
-        output <= uvData;
+        serialize_write(output, index, width, height, resizeUVs, resizeImage);
+        serialize_write(output, skin);
+        serialize_write(output, uvData);
     }
 
-    virtual size_t Size() const override { return _size; }
+    virtual size_t Size() const override
+    {
+        return sizeof(*this) +
+            skin.image.data_size() +
+            vector_element_size(uvData);
+    }
 
 	SET_UNDO_REDO_ID(UndoRedoStateResizeSkin)
 
 private:
-    void CalculateSize(ModelData *data)
-    {
-        _size = sizeof(*this);
-        _size += std::max(skin.image.data_size(), data->skins[index].image.data_size());
-        _size += vector_element_size(uvData);
-    }
-
     int32_t   index;
     int32_t   width;
     int32_t   height;
@@ -550,8 +536,6 @@ private:
     ModelSkin skin;
 
     std::vector<glm::vec2> uvData;
-
-    size_t    _size = 0;
 };
 
 REGISTER_UNDO_REDO_ID(UndoRedoStateResizeSkin);
@@ -561,9 +545,7 @@ void ModelMutator::resizeSkin(int width, int height, bool resizeUVs, bool resize
     if (!model().model().selectedSkin.has_value())
         return;
 
-    auto state = new UndoRedoStateResizeSkin(model().model().selectedSkin.value(), width, height, resizeUVs, resizeImage);
-    state->Redo(model().mutator().data);
-    undo().Push(state);
+    undo().Push(new UndoRedoStateResizeSkin(model().model().selectedSkin.value(), width, height, resizeUVs, resizeImage));
 }
 
 class UndoRedoStateMoveSkin : public UndoRedoState
@@ -598,14 +580,14 @@ public:
         return "Skin Moved";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= old_index >= new_index;
+        serialize_read(input, old_index, new_index);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= old_index <= new_index;
+        serialize_write(output, old_index, new_index);
     }
 
     virtual size_t Size() const override { return sizeof(*this); }
@@ -628,9 +610,7 @@ void ModelMutator::moveSkin(int target, bool after)
     int old_index = model().model().selectedSkin.value();
     int new_index = target;
 
-    auto state = new UndoRedoStateMoveSkin(old_index, new_index, after);
-    state->Redo(model().mutator().data);
-    undo().Push(state);
+    undo().Push(new UndoRedoStateMoveSkin(old_index, new_index, after));
 }
 
 class UndoRedoStateImportSkin : public UndoRedoState
@@ -669,14 +649,14 @@ public:
         return "Skin Imported";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= skin;
+        serialize_read(input, skin);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= skin;
+        serialize_write(output, skin);
     }
 
     virtual size_t Size() const override { return sizeof(*this); }
@@ -703,9 +683,7 @@ void ModelMutator::importSkin(Image &image)
     skin.height = image.height;
     skin.image = std::move(image);
 
-    auto state = new UndoRedoStateImportSkin(skin);
-    state->Redo(model().mutator().data);
-    undo().Push(state);
+    undo().Push(new UndoRedoStateImportSkin(skin));
 
     undo().EndCombined();
 }
@@ -758,35 +736,28 @@ public:
         return text.value;
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= mesh_vertices >= selection_states;
-        CalculateSize();
+        serialize_read(input, mesh_vertices, selection_states);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= mesh_vertices <= selection_states;
+        serialize_write(output, mesh_vertices, selection_states);
     }
 
-    virtual size_t Size() const override { return _size; }
+    virtual size_t Size() const override
+    {
+        return sizeof(*this)
+            + vector_element_size(mesh_vertices)
+            + (selection_states.num_blocks() * (selection_states.bits_per_block / 8));
+    }
     
     virtual const char *Id() const override { return id.value; }
 
 private:
     std::vector<size_t> mesh_vertices;
     sul::dynamic_bitset<> selection_states;
-    size_t _size = 0;
-
-    void CalculateSize()
-    {
-        mesh_vertices.shrink_to_fit();
-        selection_states.shrink_to_fit();
-
-        _size = sizeof(*this)
-            + vector_element_size(mesh_vertices)
-            + (selection_states.num_blocks() * (selection_states.bits_per_block / 8));
-    }
 
     friend class ModelMutator;
 
@@ -819,6 +790,9 @@ private:
             mesh_vertices.push_back(i);
             selection_states.push_back((tc.*TVertMember));
         }
+
+        mesh_vertices.shrink_to_fit();
+        selection_states.shrink_to_fit();
     }
 
     static void SelectAll(ModelMutator &mutator)
@@ -841,8 +815,6 @@ private:
 
         if (!state->mesh_vertices.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -867,8 +839,6 @@ private:
 
         if (!state->mesh_vertices.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -890,8 +860,6 @@ private:
 
         if (!state->mesh_vertices.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -934,8 +902,6 @@ private:
 
         if (!state->mesh_vertices.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
             return true;
         }
@@ -967,8 +933,6 @@ private:
 
         if (!state->mesh_vertices.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -1104,35 +1068,28 @@ public:
         return text.value;
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= mesh_triangles >= selection_states;
-        CalculateSize();
+        serialize_read(input, mesh_triangles, selection_states);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= mesh_triangles <= selection_states;
+        serialize_write(output, mesh_triangles, selection_states);
     }
 
-    virtual size_t Size() const override { return _size; }
+    virtual size_t Size() const override
+    {
+        return sizeof(*this)
+            + vector_element_size(mesh_triangles)
+            + (selection_states.num_blocks() * (selection_states.bits_per_block / 8));
+    }
     
     virtual const char *Id() const override { return id.value; }
 
 private:
     std::vector<size_t> mesh_triangles;
     sul::dynamic_bitset<> selection_states;
-    size_t _size = 0;
-
-    void CalculateSize()
-    {
-        mesh_triangles.shrink_to_fit();
-        selection_states.shrink_to_fit();
-
-        _size = sizeof(*this)
-            + vector_element_size(mesh_triangles)
-            + (selection_states.num_blocks() * (selection_states.bits_per_block / 8));
-    }
 
     friend class ModelMutator;
 
@@ -1163,6 +1120,9 @@ private:
             mesh_triangles.push_back(i);
             selection_states.push_back(tri.*TTriSelectedMember);
         }
+
+        mesh_triangles.shrink_to_fit();
+        selection_states.shrink_to_fit();
     }
 
     static void SelectAll(ModelMutator &mutator)
@@ -1185,8 +1145,6 @@ private:
 
         if (!state->mesh_triangles.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -1211,8 +1169,6 @@ private:
 
         if (!state->mesh_triangles.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -1234,8 +1190,6 @@ private:
 
         if (!state->mesh_triangles.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -1274,8 +1228,6 @@ private:
 
         if (!state->mesh_triangles.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
             return true;
         }
@@ -1310,8 +1262,6 @@ private:
 
         if (!state->mesh_triangles.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -1334,8 +1284,6 @@ private:
 
         if (!state->mesh_triangles.empty())
         {
-            state->Redo(data);
-            state->CalculateSize();
             undo().Push(std::move(state));
         }
     }
@@ -1578,18 +1526,22 @@ public:
         return "UV Coords Transformed";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= matrix >= mesh_vertices >= uv_positions;
-        CalculateSize();
+        serialize_read(input, matrix, mesh_vertices, uv_positions);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= matrix <= mesh_vertices <= uv_positions;
+        serialize_write(output, matrix, mesh_vertices, uv_positions);
     }
 
-    virtual size_t Size() const override { return _size; }
+    virtual size_t Size() const override
+    {
+        return sizeof(*this)
+            + vector_element_size(mesh_vertices)
+            + vector_element_size(uv_positions);
+    }
 
 	SET_UNDO_REDO_ID(UndoRedoUVCoordinatesTransformed)
 
@@ -1597,17 +1549,6 @@ private:
     glm::mat4              matrix;
     std::vector<size_t>    mesh_vertices;
     std::vector<glm::vec2> uv_positions;
-    size_t                 _size = 0;
-
-    void CalculateSize()
-    {
-        mesh_vertices.shrink_to_fit();
-        uv_positions.shrink_to_fit();
-
-        _size = sizeof(*this)
-            + vector_element_size(mesh_vertices)
-            + vector_element_size(uv_positions);
-    }
 
     friend class ModelMutator;
 };
@@ -1644,12 +1585,13 @@ void ModelMutator::applyUVMatrix(const glm::mat4 &matrix, SelectMode mode)
             state->mesh_vertices.push_back(v);
             state->uv_positions.push_back(data->meshes[i].texcoords[v].pos);
         }
+
+        state->mesh_vertices.shrink_to_fit();
+        state->uv_positions.shrink_to_fit();
     }
 
     if (!state->mesh_vertices.empty())
     {
-        state->Redo(model().mutator().data);
-        state->CalculateSize();
         undo().Push(std::move(state));
     }
 }
@@ -1705,18 +1647,22 @@ public:
         return "3D Coords Transformed";
     }
 
-	virtual void Read(std::istream &input) override
+	virtual void Read(read_adapter &input) override
     {
-        input >= matrix >= mesh_vertices >= vertice_data;
-        CalculateSize();
+        serialize_read(input, matrix, mesh_vertices, vertice_data);
     }
 
-	virtual void Write(std::ostream &output) const override
+	virtual void Write(write_adapter &output) const override
     {
-        output <= matrix <= mesh_vertices <= vertice_data;
+        serialize_write(output, matrix, mesh_vertices, vertice_data);
     }
 
-    virtual size_t Size() const override { return _size; }
+    virtual size_t Size() const override
+    {
+        return sizeof(*this)
+            + vector_element_size(mesh_vertices)
+            + vector_element_size(vertice_data);
+    }
 
 	SET_UNDO_REDO_ID(UndoRedo3DCoordinatesTransformed)
 
@@ -1724,17 +1670,6 @@ private:
     glm::mat4                     matrix;
     std::vector<size_t>           mesh_vertices;
     std::vector<MeshFrameVertTag> vertice_data;
-    size_t                        _size = 0;
-
-    void CalculateSize()
-    {
-        mesh_vertices.shrink_to_fit();
-        vertice_data.shrink_to_fit();
-
-        _size = sizeof(*this)
-            + vector_element_size(mesh_vertices)
-            + vector_element_size(vertice_data);
-    }
 
     friend class ModelMutator;
 };
@@ -1764,14 +1699,451 @@ void ModelMutator::apply3DMatrix(const glm::mat4 &matrix, SelectMode mode)
             state->mesh_vertices.push_back(v);
             state->vertice_data.push_back(data->meshes[i].frames[data->selectedFrame].vertices[v]);
         }
+
+        state->mesh_vertices.shrink_to_fit();
+        state->vertice_data.shrink_to_fit();
     }
 
     if (!state->mesh_vertices.empty())
     {
-        state->Redo(model().mutator().data);
-        state->CalculateSize();
         undo().Push(std::move(state));
     }
+}
+#pragma endregion
+
+#pragma region(Delete UVs)
+class UndoRedoUVFacesRemoved : public UndoRedoState
+{
+public:
+    UndoRedoUVFacesRemoved() = default;
+
+	void Undo(ModelData *data) override
+    {
+        vector_read_adapter stream(command_buffer);
+
+        while (true)
+        {
+            size_t mesh_index;
+            serialize_read(stream, mesh_index);
+            
+            if (mesh_index == (size_t) -1)
+                break;
+
+            auto &mesh = data->meshes[mesh_index];
+
+            while (true)
+            {
+                size_t triangle_index;
+                serialize_read(stream, triangle_index);
+
+                if (triangle_index == (size_t) -1)
+                    break;
+
+                auto &tri = mesh.triangles[triangle_index];
+                serialize_read(stream, tri.texcoords, tri.selectedUV);
+            }
+        }
+
+        ui().editor3D().renderer().markBufferDirty();
+    }
+
+	void Redo(ModelData *data) override
+    {
+        vector_read_adapter stream(command_buffer);
+
+        while (true)
+        {
+            size_t mesh_index;
+            serialize_read(stream, mesh_index);
+            
+            if (mesh_index == (size_t) -1)
+                break;
+
+            auto &mesh = data->meshes[mesh_index];
+
+            while (true)
+            {
+                size_t triangle_index;
+                serialize_read(stream, triangle_index);
+
+                if (triangle_index == (size_t) -1)
+                    break;
+
+                auto &tri = mesh.triangles[triangle_index];
+                tri.texcoords = {};
+                tri.selectedUV = false;
+
+                stream.skip(sizeof(tri.texcoords) + sizeof(tri.selectedUV));
+            }
+        }
+
+        ui().editor3D().renderer().markBufferDirty();
+    }
+
+	const char *Name() const override
+    {
+        return "UV Faces Removed";
+    }
+
+	virtual void Read(read_adapter &input) override
+    {
+        serialize_read(input, command_buffer);
+    }
+
+	virtual void Write(write_adapter &output) const override
+    {
+        serialize_write(output, command_buffer);
+    }
+
+    virtual size_t Size() const override { return sizeof(*this) + command_buffer.size(); }
+
+	SET_UNDO_REDO_ID(UndoRedoUVFacesRemoved)
+
+private:
+    std::vector<uint8_t>       command_buffer;
+
+    void InitFromTriangles(const ModelData *data, std::function<bool(const ModelMesh &mesh, const ModelTriangle &tri)> func)
+    {
+        vector_write_adapter stream;
+
+        for (auto &mesh : data->meshes)
+        {
+            size_t meshIndex = (size_t) (&mesh - data->meshes.data());
+
+            if (data->selectedMesh.has_value() && data->selectedMesh != meshIndex)
+                continue;
+
+            bool meshWritten = false;
+
+            for (auto &triangle : mesh.triangles)
+            {
+                if (!func(mesh, triangle))
+                    continue;
+
+                if (!meshWritten)
+                {
+                    meshWritten = true;
+                    serialize_write(stream, meshIndex);
+                }
+
+                serialize_write(stream, (size_t) (&triangle - mesh.triangles.data()));
+                serialize_write(stream, triangle.texcoords, triangle.selectedUV);
+            }
+
+            if (meshWritten)
+                serialize_write(stream, (size_t) -1);
+        }
+
+        serialize_write(stream, (size_t) -1);
+
+        command_buffer = std::move(stream.data);
+        command_buffer.shrink_to_fit();
+    }
+
+    friend class ModelMutator;
+};
+
+REGISTER_UNDO_REDO_ID(UndoRedoUVFacesRemoved);
+
+class UndoRedoUVVerticesRemoved : public UndoRedoState
+{
+    struct ModifiedTexCoord
+    {
+        uint32_t                index;
+        std::array<uint32_t, 3> texcoords;
+        bool                    selected;
+
+        auto stream_data()
+        {
+            return std::tie(index, texcoords, selected);
+        }
+    };
+
+public:
+    UndoRedoUVVerticesRemoved() = default;
+
+	void Undo(ModelData *data) override
+    {
+        vector_read_adapter stream(command_buffer);
+
+        std::vector<uint32_t> removedIDs;
+        std::vector<ModifiedTexCoord> changedFaces;
+
+        while (true)
+        {
+            size_t mesh_index;
+            serialize_read(stream, mesh_index);
+            
+            if (mesh_index == (size_t) -1)
+                break;
+
+            auto &mesh = data->meshes[mesh_index];
+            
+            removedIDs.clear();
+            serialize_read(stream, removedIDs);
+
+            for (auto it : removedIDs)
+            {
+                ModelTexCoord tc;
+                serialize_read(stream, tc);
+                mesh.texcoords.insert(mesh.texcoords.begin() + it, tc);
+            }
+
+            changedFaces.clear();
+            serialize_read(stream, changedFaces);
+
+            for (auto &face : changedFaces)
+            {
+                mesh.triangles[face.index].texcoords = face.texcoords;
+                mesh.triangles[face.index].selectedUV = face.selected;
+            }
+        }
+
+        ui().editor3D().renderer().markBufferDirty();
+    }
+
+	void Redo(ModelData *data) override
+    {
+        // for redo, we just need to delete the entries in reverse and
+        // then update all of the texcoord IDs backwards.
+        vector_read_adapter stream(command_buffer);
+
+        std::vector<uint32_t> removedIDs;
+        std::vector<ModifiedTexCoord> changedFaces;
+
+        while (true)
+        {
+            size_t mesh_index;
+            serialize_read(stream, mesh_index);
+            
+            if (mesh_index == (size_t) -1)
+                break;
+
+            auto &mesh = data->meshes[mesh_index];
+            
+            removedIDs.clear();
+            serialize_read(stream, removedIDs);
+
+            // skip texcoord data, we don't need it
+            stream.skip((sizeof(glm::vec2) + sizeof(bool)) * removedIDs.size());
+
+            changedFaces.clear();
+            serialize_read(stream, changedFaces);
+
+            for (auto it = removedIDs.rbegin(); it != removedIDs.rend(); it++)
+            {
+                mesh.texcoords.erase(mesh.texcoords.begin() + *it);
+
+                for (auto &triangle : changedFaces)
+                    for (auto &tc : mesh.triangles[triangle.index].texcoords)
+                        if (tc >= *it && tc)
+                            tc--;
+            }
+        }
+
+        ui().editor3D().renderer().markBufferDirty();
+    }
+
+	const char *Name() const override
+    {
+        return "UV Vertices Removed";
+    }
+
+	virtual void Read(read_adapter &input) override
+    {
+        serialize_read(input, command_buffer);
+    }
+
+	virtual void Write(write_adapter &output) const override
+    {
+        serialize_write(output, command_buffer);
+    }
+
+    virtual size_t Size() const override { return sizeof(*this) + command_buffer.size(); }
+
+	SET_UNDO_REDO_ID(UndoRedoUVVerticesRemoved)
+
+private:
+    std::vector<uint8_t>       command_buffer;
+
+    void InitFromSelected(const ModelData *data, SelectMode mode)
+    {
+        vector_write_adapter adapter;
+        std::unordered_set<uint32_t> removedIDs;
+        std::vector<uint32_t> flatRemovedIDs;
+        std::vector<ModifiedTexCoord> changedFaces;
+
+        for (auto &mesh : data->meshes)
+        {
+            size_t meshIndex = (size_t) (&mesh - data->meshes.data());
+
+            if (data->selectedMesh.has_value() && data->selectedMesh != meshIndex)
+                continue;
+
+            removedIDs.clear();
+
+            if (mode == SelectMode::Vertex)
+            {
+                for (auto &tc : mesh.texcoords)
+                    if (tc.selected)
+                        removedIDs.insert(&tc - mesh.texcoords.data());
+            }
+            else
+            {
+                for (auto &tc : mesh.triangles)
+                    if (tc.selectedUV)
+                        removedIDs.insert({ tc.texcoords[0], tc.texcoords[1], tc.texcoords[2] });
+                for (auto &tc : mesh.triangles)
+                    if (!tc.selectedUV)
+                    {
+                        removedIDs.erase(tc.texcoords[0]);
+                        removedIDs.erase(tc.texcoords[1]);
+                        removedIDs.erase(tc.texcoords[2]);
+                    }
+            }
+
+            if (removedIDs.empty())
+                continue;
+
+            flatRemovedIDs.clear();
+            std::copy(removedIDs.begin(), removedIDs.end(), std::back_inserter(flatRemovedIDs));
+            std::sort(flatRemovedIDs.begin(), flatRemovedIDs.end());
+
+            for (auto &tri : mesh.triangles)
+            {
+                if (tri.texcoords[0] >= flatRemovedIDs.front() ||
+                    tri.texcoords[1] >= flatRemovedIDs.front() ||
+                    tri.texcoords[2] >= flatRemovedIDs.front())
+                    changedFaces.emplace_back((uint32_t) (&tri - mesh.triangles.data()), tri.texcoords);
+            }
+
+            serialize_write(adapter, meshIndex);
+            serialize_write(adapter, flatRemovedIDs);
+
+            for (auto &tc : flatRemovedIDs)
+                serialize_write(adapter, mesh.texcoords[tc]);
+
+            serialize_write(adapter, changedFaces);
+        }
+
+        serialize_write(adapter, (size_t) -1);
+
+        command_buffer = std::move(adapter.data);
+        command_buffer.shrink_to_fit();
+    }
+
+    void InitFromCleanup(const ModelData *data)
+    {
+        vector_write_adapter adapter;
+        std::vector<uint32_t> removedIDs;
+        std::unordered_set<uint32_t> removableIDs;
+
+        for (auto &mesh : data->meshes)
+        {
+            size_t meshIndex = (size_t) (&mesh - data->meshes.data());
+
+            if (data->selectedMesh.has_value() && data->selectedMesh != meshIndex)
+                continue;
+
+            removableIDs.clear();
+
+            removableIDs.reserve(mesh.texcoords.size());
+
+            for (size_t i = 0; i < mesh.texcoords.size(); i++)
+                removableIDs.insert(i);
+
+            for (auto &tc : mesh.triangles)
+                for (auto &i : tc.texcoords)
+                    removableIDs.erase(i);
+
+            if (removableIDs.empty())
+                continue;
+
+            removedIDs.clear();
+            removedIDs.reserve(removedIDs.size());
+
+            std::copy(removableIDs.begin(), removableIDs.end(), std::back_inserter(removedIDs));
+
+            std::sort(removedIDs.begin(), removedIDs.end());
+
+            serialize_write(adapter, meshIndex);
+            serialize_write(adapter, removedIDs);
+
+            for (size_t i = 0; i < removedIDs.size(); i++)
+                serialize_write(adapter, mesh.texcoords[removedIDs[i]]);
+        }
+
+        serialize_write(adapter, (size_t) -1);
+
+        command_buffer = std::move(adapter.data);
+        command_buffer.shrink_to_fit();
+    }
+
+    friend class ModelMutator;
+};
+
+REGISTER_UNDO_REDO_ID(UndoRedoUVVerticesRemoved);
+
+void ModelMutator::cleanupUVVertices(bool onlySelected, SelectMode selectMode)
+{
+    auto state = std::make_unique<UndoRedoUVVerticesRemoved>();
+
+    if (onlySelected)
+        state->InitFromSelected(data, selectMode);
+    else
+        state->InitFromCleanup(data);
+
+    if (!state->command_buffer.empty())
+        undo().Push(std::move(state));
+}
+
+void ModelMutator::deleteSelectedUVVertices()
+{
+    undo().BeginCombined();
+
+    {
+        auto state = std::make_unique<UndoRedoUVFacesRemoved>();
+
+        state->InitFromTriangles(data, [](const ModelMesh &mesh, const ModelTriangle &tri) {
+            return mesh.texcoords[tri.texcoords[0]].selected ||
+                   mesh.texcoords[tri.texcoords[1]].selected ||
+                   mesh.texcoords[tri.texcoords[2]].selected;
+        });
+
+        if (!state->command_buffer.empty())
+        {
+            undo().Push(std::move(state));
+        }
+    }
+
+    cleanupUVVertices(true, SelectMode::Vertex);
+
+    undo().EndCombined();
+}
+
+void ModelMutator::cleanUVVertices()
+{
+    cleanupUVVertices(false, SelectMode::Vertex);
+    undo().List().back()->Redo(data);
+}
+
+void ModelMutator::deleteSelectedUVFaces(bool alsoDeleteVertices)
+{
+    undo().BeginCombined();
+    
+    auto state = std::make_unique<UndoRedoUVFacesRemoved>();
+
+    state->InitFromTriangles(data, [](const ModelMesh &mesh, const ModelTriangle &tri) { return tri.selectedUV; });
+
+    if (!state->command_buffer.empty())
+    {
+        undo().Push(std::move(state));
+    }
+    
+    if (alsoDeleteVertices)
+        cleanupUVVertices(true, SelectMode::Face);
+    
+    undo().EndCombined();
 }
 #pragma endregion
 

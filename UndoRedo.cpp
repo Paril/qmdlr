@@ -34,15 +34,17 @@ UndoRedoStorage::UndoRedoStorage(const char *clas, std::function<UndoRedoState *
 
 REGISTER_UNDO_REDO_ID(UndoRedoCombinedState);
 
-/*virtual*/ void UndoRedoCombinedState::Read(std::istream &input) /*override*/
+/*virtual*/ void UndoRedoCombinedState::Read(read_adapter &input) /*override*/
 {
 	size_t count;
-	input >= count;
+	serialize_read(input, count);
 
 	std::string id;
 
 	for (size_t i = 0; i < count; i++)
 	{
+		serialize_read(input, id);
+
 		UndoRedoStorage *store = UndoRedoStorage::Find(id.c_str());
 		UndoRedoState *state = store->factory();
 
@@ -51,13 +53,13 @@ REGISTER_UNDO_REDO_ID(UndoRedoCombinedState);
 	}
 }
 
-/*virtual*/ void UndoRedoCombinedState::Write(std::ostream &output) const /*override*/
+/*virtual*/ void UndoRedoCombinedState::Write(write_adapter &output) const /*override*/
 {
-	output <= _states.size();
+	serialize_write(output, _states.size());
 
 	for (auto &state : _states)
 	{
-		output <= state->Id();
+		serialize_write(output, state->Id());
 		state->Write(output);
 	}
 }
@@ -65,6 +67,9 @@ REGISTER_UNDO_REDO_ID(UndoRedoCombinedState);
 void UndoRedo::Push(UndoRedoState *state)
 {
 	SDL_assert(UndoRedoStorage::Find(state->Id()));
+
+	if (_disallowAutoPush)
+		assert(!state->AutoRedo());
 
 	if (_disabled)
 	{
@@ -88,11 +93,12 @@ void UndoRedo::Push(UndoRedoState *state)
 		_pointer = std::nullopt;
 	}
 
+	if (state->AutoRedo())
+		state->Redo(model().mutator().data);
+
 	state->_iterator = _list.insert(_list.end(), UndoRedoStatePtr(state));
 
 	Shrink();
-
-	_size += state->Size();
 }
 
 // potentially combine multiple pushes into one state
@@ -103,7 +109,7 @@ void UndoRedo::BeginCombined()
 }
 
 // end combination state
-void UndoRedo::EndCombined()
+size_t UndoRedo::EndCombined()
 {
 	_combining = false;
 	
@@ -112,10 +118,19 @@ void UndoRedo::EndCombined()
 	else
 	{
 		if (_combinedTemp._states.size() == 1)
+		{
 			Push(std::move(_combinedTemp._states[0]));
+			return 1;
+		}
 		else if (_combinedTemp._states.size() != 0)
+		{
+			size_t n = _combinedTemp._states.size();
 			Push(std::make_unique<UndoRedoCombinedState>(std::move(_combinedTemp)));
+			return n;
+		}
 	}
+
+	return 0;
 }
 
 void UndoRedo::Clear()
@@ -215,37 +230,37 @@ void UndoRedo::RunDeferred(bool force)
 }
 
 // read/write
-void UndoRedo::Write(std::ostream &stream)
+void UndoRedo::Write(write_adapter &stream)
 {
 	RunDeferred(true);
 
-	stream <= _list.size();
+	serialize_write(stream, _list.size());
 
 	for (auto &entry : _list)
 	{
-		stream <= entry->Id();
+		serialize_write(stream, entry->Id());
 		entry->Write(stream);
 	}
 
 	if (!_pointer)
-		stream <= false;
+		serialize_write(stream, false);
 	else
 	{
-		stream <= true;
-		stream <= std::distance(_list.begin(), _pointer.value());
+		serialize_write(stream, true);
+		serialize_write(stream, std::distance(_list.begin(), _pointer.value()));
 	}
 }
 
-void UndoRedo::Read(std::istream &stream)
+void UndoRedo::Read(read_adapter &stream)
 {
 	size_t count;
-	stream >= count;
+	serialize_read(stream, count);
 
 	std::string id;
 
 	for (size_t i = 0; i < count; i++)
 	{
-		stream >= id;
+		serialize_read(stream, id);
 
 		UndoRedoStorage *store = UndoRedoStorage::Find(id.c_str());
 		UndoRedoState *state = store->factory();
@@ -255,12 +270,12 @@ void UndoRedo::Read(std::istream &stream)
 	}
 
 	bool has_ptr;
-	stream >= has_ptr;
+	serialize_read(stream, has_ptr);
 
 	if (has_ptr)
 	{
 		ptrdiff_t dist;
-		stream >= dist;
+		serialize_read(stream, dist);
 
 		_pointer = _list.begin();
 		std::advance(_pointer.value(), dist);

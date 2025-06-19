@@ -1,7 +1,7 @@
 #include <fstream>
 #include <imgui.h>
 #include <ranges>
-#include "settings.h"
+#include "Settings.h"
 #include "TOML.h"
 
 namespace toml::qmdlr

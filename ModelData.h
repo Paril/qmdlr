@@ -216,31 +216,31 @@ struct MeshFrameVertTag
             return { tag().transform(m, n) };
     }
 
-    void stream_write(std::ostream &s) const
+    void stream_write(write_adapter &s) const
     {
-        s <= is_vertex();
+        serialize_write(s, is_vertex());
 
         if (is_vertex())
-            s <= vertex();
+            serialize_write(s, vertex());
         else
-            s <= tag();
+            serialize_write(s, tag());
     }
 
-    void stream_read(std::istream &s)
+    void stream_read(read_adapter &s)
     {
         bool is_vertex;
-        s >= is_vertex;
+        serialize_read(s, is_vertex);
 
         if (is_vertex)
         {
             MeshFrameVertex v;
-            s >= v;
+            serialize_read(s, v);
             data = v;
         }
         else
         {
             MeshFrameTag t;
-            s >= t;
+            serialize_read(s, t);
             data = t;
         }
     }

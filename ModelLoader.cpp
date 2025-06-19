@@ -52,17 +52,18 @@ struct qim_chunk_t
 #define CHECK_ZSTD(x) x
 #define CHECK(x)
 
-void WriteQIMChunk(std::ostream &s, bool compressed, int32_t chunk_id, std::function<void(std::ostream &)> write_chunk)
+void WriteQIMChunk(std::ostream &s, bool compressed, int32_t chunk_id, std::function<void(ostream_write_adapter &)> write_chunk)
 {
 	std::streamoff chunk_header_offset = s.tellp();
-	qim_chunk_t chunk { chunk_id, 0, compressed ? QIM_FLAG_COMPRESSED : 0 };
-	s <= chunk;
+	qim_chunk_t chunk { chunk_id, 0, (int8_t) (compressed ? QIM_FLAG_COMPRESSED : 0) };
+	ostream_write_adapter adapter(s);
+	serialize_write(adapter, chunk);
 	if (!compressed)
-		write_chunk(s);
+		write_chunk(adapter);
 	else
 	{
 		std::stringstream c;
-		write_chunk(c);
+		write_chunk(adapter);
 
 		c.seekg(0);
 
@@ -87,7 +88,7 @@ void WriteQIMChunk(std::ostream &s, bool compressed, int32_t chunk_id, std::func
 	std::streamoff p = s.tellp();
 	chunk.size = p - (chunk_header_offset + sizeof(int32_t) + sizeof(size_t));
 	s.seekp(chunk_header_offset);
-	s <= chunk;
+	serialize_write(adapter, chunk);
 	s.seekp(p);
 }
 
@@ -98,28 +99,28 @@ static void SaveQIM(const ModelData &model, const std::filesystem::path &file)
 	if (!stream.good())
 		throw std::runtime_error("can't open file for writing");
 
-	stream << endianness<std::endian::little>;
+	ostream_write_adapter adapter(stream);
 
 	set_qim_version(stream, QIM_VERSION);
 	
-	stream <= QIM_MAGIC;
-	stream <= QIM_VERSION;
+	serialize_write(adapter, QIM_MAGIC);
+	serialize_write(adapter, QIM_VERSION);
 
-	WriteQIMChunk(stream, true, QIM_CHUNK_MODEL, [&model](std::ostream &stream) {
-		stream <= model;
+	WriteQIMChunk(stream, true, QIM_CHUNK_MODEL, [&model](ostream_write_adapter &adapter) {
+		serialize_write(adapter, model);
 	});
 
-	WriteQIMChunk(stream, true, QIM_CHUNK_UNDO, [](std::ostream &stream) {
-		undo().Write(stream);
+	WriteQIMChunk(stream, true, QIM_CHUNK_UNDO, [](ostream_write_adapter &adapter) {
+		undo().Write(adapter);
 	});
 }
 
-static void LoadQIMChunk(const qim_chunk_t &chunk_header, ModelData &data, std::istream &stream)
+static void LoadQIMChunk(const qim_chunk_t &chunk_header, ModelData &data, istream_read_adapter &adapter)
 {
 	if (chunk_header.id == QIM_CHUNK_MODEL)
-		stream >= data;
+		serialize_read(adapter, data);
 	else if (chunk_header.id == QIM_CHUNK_UNDO)
-		undo().Read(stream);
+		undo().Read(adapter);
 }
 
 std::unique_ptr<ModelData> LoadQIM(const std::filesystem::path &file)
@@ -132,12 +133,12 @@ std::unique_ptr<ModelData> LoadQIM(const std::filesystem::path &file)
     if (!stream.good())
         throw std::runtime_error("can't open file for reading");
 
-	stream >> endianness<std::endian::little>;
+	istream_read_adapter adapter(stream);
 
 	int32_t v;
 
-	stream >= v;
-	stream >= v;
+	serialize_read(adapter, v);
+	serialize_read(adapter, v);
 
 	set_qim_version(stream, v);
 
@@ -149,7 +150,7 @@ std::unique_ptr<ModelData> LoadQIM(const std::filesystem::path &file)
 	{
 		qim_chunk_t chunk_header;
 
-		stream >= chunk_header;
+		serialize_read(adapter, chunk_header);
 
 		if (!stream)
 			break;
@@ -164,7 +165,7 @@ std::unique_ptr<ModelData> LoadQIM(const std::filesystem::path &file)
 
 		// valid chunk, decompress if necessary
 		if (!(chunk_header.flags & QIM_FLAG_COMPRESSED))
-			LoadQIMChunk(chunk_header, data, stream);
+			LoadQIMChunk(chunk_header, data, adapter);
 		else
 		{
 			std::stringstream decompressed;
@@ -193,7 +194,9 @@ std::unique_ptr<ModelData> LoadQIM(const std::filesystem::path &file)
 			ZSTD_freeDCtx(dctx);
 
 			decompressed.seekg(0);
-			LoadQIMChunk(chunk_header, data, decompressed);
+			
+			istream_read_adapter decompressed_adapter(decompressed);
+			LoadQIMChunk(chunk_header, data, decompressed_adapter);
 		}
 	}
 
@@ -489,10 +492,10 @@ static std::unique_ptr<ModelData> LoadMD2(const std::filesystem::path &file)
     if (!stream.good())
         throw std::runtime_error("can't open file for reading");
 
-	stream >> endianness<std::endian::little>;
+	istream_read_adapter adapter(stream);
 
 	dmdl_t header;
-	stream >= header;
+	serialize_read(adapter, header);
 
 	ModelData data;
 
@@ -516,14 +519,14 @@ static std::unique_ptr<ModelData> LoadMD2(const std::filesystem::path &file)
 		auto &meshframe = mesh.frames[i];
 
 		daliasframe_t frame_header;
-		stream >= frame_header;
+		serialize_read(adapter, frame_header);
 
 		modelframe.name = frame_header.name.c_str();
 
 		for (auto &vert : meshframe.vertices)
 		{
 			dtrivertx_t v;
-			stream >= v;
+			serialize_read(adapter, v);
 
 			vert = { MeshFrameVertex { glm::vec3 {
 					(v.v[0] * frame_header.scale[0]) + frame_header.translate[0],
@@ -541,7 +544,7 @@ static std::unique_ptr<ModelData> LoadMD2(const std::filesystem::path &file)
 	for (auto &st : mesh.texcoords)
 	{
 		dstvert_t v;
-		stream >= v;
+		serialize_read(adapter, v);
 		st.pos = { (float) v.s / header.skinwidth, (float) v.t / header.skinheight };
 	}
 
@@ -551,7 +554,7 @@ static std::unique_ptr<ModelData> LoadMD2(const std::filesystem::path &file)
 	for (auto &tri : mesh.triangles)
 	{
 		dtriangle_t t;
-		stream >= t;
+		serialize_read(adapter, t);
 		
 		std::copy(t.index_xyz.begin(), t.index_xyz.end(), tri.vertices.begin());
 		std::copy(t.index_st.begin(), t.index_st.end(), tri.texcoords.begin());
@@ -567,7 +570,7 @@ static std::unique_ptr<ModelData> LoadMD2(const std::filesystem::path &file)
 	for (auto &skin : data.skins)
 	{
 		cstring_t<MD2_MAX_SKINNAME> skin_path;
-		stream >= skin_path;
+		serialize_read(adapter, skin_path);
 		skin.name = skin_path.c_str();
 		
 		// try to find the matching image file, convert to rgba
@@ -772,10 +775,10 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
     if (!stream.good())
         throw std::runtime_error("can't open file for reading");
 
-	stream >> endianness<std::endian::little>;
+	istream_read_adapter adapter(stream);
 
 	mdl_t header;
-	stream >= header;
+	serialize_read(adapter, header);
 
 	ModelData data;
 
@@ -803,7 +806,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 	for (int i = 0; i < header.numskins; i++)
 	{
 		aliasgrouptype_t type;
-		stream >= (int32_t &) type;
+		serialize_read(adapter, (int32_t &) type);
 
 		if (type == ALIAS_SINGLE)
 		{
@@ -813,7 +816,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 		else
 		{
 			int32_t numskins;
-			stream >= numskins;
+			serialize_read(adapter, numskins);
 
 			size_t frame_start = data.skins.size();
 			
@@ -822,7 +825,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 				auto &outskin = data.skins.emplace_back();
 
 				float interval;
-				stream >= interval;
+				serialize_read(adapter, interval);
 
 				outskin.q1_data = { group_id, interval };
 			}
@@ -846,7 +849,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 	for (int i = 0; i < header.numverts; i++)
 	{
 		auto &st = stverts[i];
-		stream >= st;
+		serialize_read(adapter, st);
 
 		auto &v = mesh.texcoords[i];
 		v.pos = { (float) st.s / header.skinwidth, (float) st.t / header.skinheight };
@@ -857,7 +860,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 	for (int i = 0; i < header.numtris; i++)
 	{
 		dmdltriangle_t t;
-		stream >= t;
+		serialize_read(adapter, t);
 
 		auto &tri = mesh.triangles[i];
 		tri.vertices = { (uint32_t) t.vertindex[0], (uint32_t) t.vertindex[1], (uint32_t) t.vertindex[2] };
@@ -886,9 +889,9 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 
 	group_id = 0;
 
-	auto parseSingleFrame = [&stream, &header](ModelFrame &outframe, MeshFrame &meshframe) {
+	auto parseSingleFrame = [&adapter, &header](ModelFrame &outframe, MeshFrame &meshframe) {
 		dmdlaliasframe_t frame;
-		stream >= frame;
+		serialize_read(adapter, frame);
 
 		outframe.name = frame.name.c_str();
 		meshframe.vertices.resize(header.numverts);
@@ -896,7 +899,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 		for (int x = 0; x < header.numverts; x++)
 		{
 			dtrivertx_t v;
-			stream >= v;
+			serialize_read(adapter, v);
 
 			auto &vert = meshframe.vertices[x];
 
@@ -913,7 +916,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 	for (int i = 0; i < header.numframes; i++)
 	{
 		aliasgrouptype_t type;
-		stream >= (int32_t &) type;
+		serialize_read(adapter, (int32_t &) type);
 
 		if (type == ALIAS_SINGLE)
 		{
@@ -924,7 +927,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 		else
 		{
 			daliasgroup_t group;
-			stream >= group;
+			serialize_read(adapter, group);
 
 			size_t frame_start = data.frames.size();
 			
@@ -934,7 +937,7 @@ static std::unique_ptr<ModelData> LoadMDL(const std::filesystem::path &file)
 				auto &meshframe = mesh.frames.emplace_back();
 
 				float interval;
-				stream >= interval;
+				serialize_read(adapter, interval);
 
 				outframe.q1_data = { group_id, interval };
 			}

@@ -6,6 +6,7 @@
 #include <optional>
 #include <functional>
 #include <iostream>
+#include "Stream.h"
 
 class ModelData;
 
@@ -31,18 +32,26 @@ public:
 	// name for this operation
 	virtual const char *Name() const = 0;
 
-	virtual void Read(std::istream &input) = 0;
-
-	virtual void Write(std::ostream &output) const = 0;
+	virtual void Read(read_adapter &input) = 0;
+	virtual void Write(write_adapter &output) const = 0;
 
 	// nb: this must return the *full size* occupied
 	// by this instance. It is used for calculating
 	// buffer size spillage, and for serialization.
-	virtual size_t Size() const = 0;
+	virtual size_t Size() const { return sizeof(*this); }
 
 	inline const UndoRedoStateIterator &Iterator() const { return _iterator; }
 
 	virtual const char *Id() const = 0;
+
+	// by default, undo/redo operations will automatically
+	// call Redo when they are pushed into the queue, as a state
+	// is supposed to be an independent operation that simply
+	// stores the data necessary to both re and un-do.
+	// in some cases (like when you're doing deferred updates)
+	// this may be undesirable. Note that an AutoRedo of false cannot
+	// be combined, as this may create a weird state of operations.
+	virtual bool AutoRedo() const { return true; }
 
 protected:
 	UndoRedoStateIterator _iterator;
@@ -98,8 +107,8 @@ public:
 		return "Multiple Operations";
 	}
 
-	virtual void Read(std::istream &input) override;
-	virtual void Write(std::ostream &output) const override;
+	virtual void Read(read_adapter &input) override;
+	virtual void Write(write_adapter &output) const override;
 
 	virtual size_t Size() const override
 	{
@@ -108,6 +117,8 @@ public:
 
 	void Push(UndoRedoState *state)
 	{
+		assert(state->AutoRedo());
+
 		_size += state->Size();
 		_states.emplace_back(state);
 	}
@@ -132,8 +143,6 @@ class UndoRedo
 {
 public:
 	UndoRedoStateList &List() { return _list; }
-	// total byte size of current data
-	const size_t &Size() const { return _size; }
 	// pointer to where we are in the linked list; if this is
 	// null, we have not performed any operations yet (are at the head).
 	const UndoRedoStatePointer &Pointer() const { return _pointer; }
@@ -151,14 +160,15 @@ public:
 
 private:
 	UndoRedoCombinedState _combinedTemp;
-	bool _combining = false;
+	bool _combining = false, _disallowAutoPush = false;
 
 public:
 	// potentially combine multiple pushes into one state
 	void BeginCombined();
 
-	// end combination state
-	void EndCombined();
+	// end combination state; returns the amount of states
+	// that were added to the head
+	size_t EndCombined();
 
 	// push a deferred undo state; it will not immediately add
 	// to the undo/redo list, but will execute a supplied callback
@@ -192,7 +202,9 @@ public:
 			handle = false;
 			decltype(_deferredUndo) swapped;
 			std::swap(swapped, _deferredUndo);
+			_disallowAutoPush = true;
 			push(state);
+			_disallowAutoPush = false;
 		};
 	}
 
@@ -226,13 +238,12 @@ public:
 	void RunDeferred(bool force = false);
 
 	// read/write
-	void Write(std::ostream &stream);
-	void Read(std::istream &stream);
+	void Write(write_adapter &stream);
+	void Read(read_adapter &stream);
 
 private:
 	// saved
 	UndoRedoStateList _list;
-	size_t _size = 0;
 	UndoRedoStatePointer _pointer = std::nullopt;
 
 	// not saved

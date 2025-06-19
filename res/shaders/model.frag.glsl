@@ -76,8 +76,8 @@ void main()
 	vec4 line_color = u_2d ? u_line2D[selectedFace] : u_line3D[selectedFace];
 
 	if (u_line == 1)
-		o_color = line_color;
-	else
+		o_color = vec4(line_color.rgb, 1);
+	else if (u_line == 2)
 	{
 		float grid = gridFactor(v_bary, 0.75, 0.5);
 

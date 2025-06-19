@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <nfd.hpp>
 #include <span>
+#include "Stream.h"
 #include "Types.h"
 
 // higher level representation of a 32-bit image
@@ -81,8 +82,8 @@ struct Image
 	}
 
 	// streaming
-	void stream_write(std::ostream &stream) const;
-	void stream_read(std::istream &stream);
+	void stream_write(write_adapter &stream) const;
+	void stream_read(read_adapter &stream);
 
 	// operations.
 	// make a resized copy. if resizeImage is set, nearest neighbor resize

@@ -10,51 +10,53 @@
 #include "Images.h"
 #include "ModelData.h"
 
-void Image::stream_write(std::ostream &stream) const
+void Image::stream_write(write_adapter &stream) const
 {
     if (!width)
     {
-        stream <= false;
+        serialize_write(stream, false);
         return;
     }
     
-    stream <= true;
-    stream <= width <= height;
+    serialize_write(stream, true);
+    serialize_write(stream, width);
+    serialize_write(stream, height);
 
     if (!rgba_size())
     {
-        stream <= false;
+        serialize_write(stream, false);
     }
     else
     {
-        stream <= true;
+        serialize_write(stream, true);
         stream.write(reinterpret_cast<const char *>(rgba()), rgba_size());
     }
 
     if (!indexed_size())
     {
-        stream <= false;
+        serialize_write(stream, false);
     }
     else
     {
-        stream <= true;
+        serialize_write(stream, true);
         stream.write(reinterpret_cast<const char *>(indexed()), indexed_size());
         stream.write(reinterpret_cast<const char *>(palette()), palette_size());
     }
 }
 
-void Image::stream_read(std::istream &stream)
+void Image::stream_read(read_adapter &stream)
 {
     bool valid;
-    stream >= valid;
+    serialize_read(stream, valid);
 
     if (!valid)
         return;
 
-    stream >= width >= height;
+    serialize_read(stream, width);
+    serialize_read(stream, height);
 
     bool has_rgba;
-    stream >= has_rgba;
+    serialize_read(stream, has_rgba);
 
     if (has_rgba)
     {
@@ -63,7 +65,7 @@ void Image::stream_read(std::istream &stream)
     }
 
     bool has_indexed;
-    stream >= has_indexed;
+    serialize_read(stream, has_indexed);
 
     if (has_indexed)
     {
@@ -77,18 +79,18 @@ void Image::stream_read(std::istream &stream)
 // PCX Support
 struct pcx_t
 {
-    int8_t		manufacturer;
-    int8_t		version;
-    int8_t		encoding;
-    int8_t		bits_per_pixel;
-    uint16_t	xmin, ymin, xmax, ymax;
-    uint16_t	hres, vres;
-    padding<48>	palette;
-    int8_t		reserved;
-    int8_t		color_planes;
-    uint16_t	bytes_per_line;
-    uint16_t	palette_type;
-    padding<58>	filler;
+    int8_t		    manufacturer;
+    int8_t		    version;
+    int8_t		    encoding;
+    int8_t		    bits_per_pixel;
+    uint16_t	    xmin, ymin, xmax, ymax;
+    uint16_t	    hres, vres;
+    padding_t<48>	palette;
+    int8_t		    reserved;
+    int8_t		    color_planes;
+    uint16_t	    bytes_per_line;
+    uint16_t	    palette_type;
+    padding_t<58>	filler;
 
 	auto stream_data()
 	{
@@ -108,11 +110,11 @@ static Image LoadPCX (const std::filesystem::path &file)
     if (!stream.good())
         throw std::runtime_error("can't open file for reading");
 
-	stream >> endianness<std::endian::little>;
-
 	pcx_t pcx;
 
-	stream >= pcx;
+    istream_read_adapter adapter(stream);
+
+	serialize_read(adapter, pcx);
 
     if (pcx.manufacturer != 0x0a
 		|| pcx.version != 5
@@ -133,12 +135,12 @@ static Image LoadPCX (const std::filesystem::path &file)
 			uint8_t dataByte;
             int runLength = 1;
 
-            stream >= dataByte;
+            serialize_read(adapter, dataByte);
 
 			if((dataByte & 0xC0) == 0xC0)
 			{
 				runLength = dataByte & 0x3F;
-                stream >= dataByte;
+                serialize_read(adapter, dataByte);
 			}
 
 			while (runLength-- > 0)
@@ -149,7 +151,7 @@ static Image LoadPCX (const std::filesystem::path &file)
 
     uint8_t paletteId = 0;
 
-    stream >= paletteId;
+    serialize_read(adapter, paletteId);
 
     if (stream && paletteId == 0x0c)
         stream.read(reinterpret_cast<char *>(img.palette()), img.palette_size());
@@ -157,7 +159,7 @@ static Image LoadPCX (const std::filesystem::path &file)
     return img;
 }
 
-static void SavePCX (const Image &image, const std::filesystem::path &file)
+static void SavePCX(const Image &image, const std::filesystem::path &file)
 {
 	if (!image.is_indexed_valid())
 		throw std::runtime_error("not an indexed image");
@@ -166,8 +168,6 @@ static void SavePCX (const Image &image, const std::filesystem::path &file)
 
     if (!stream.good())
         throw std::runtime_error("can't open file for writing");
-
-	stream << endianness<std::endian::little>;
 
 	pcx_t pcx {};
 
@@ -185,7 +185,9 @@ static void SavePCX (const Image &image, const std::filesystem::path &file)
 	pcx.bytes_per_line = image.width;
 	pcx.palette_type = 2;		// not a grey scale
 
-	stream <= pcx;
+    ostream_write_adapter adapter(stream);
+
+	serialize_write(adapter, pcx);
 
 	// pack the image
 	// TODO: RLE
@@ -195,16 +197,16 @@ static void SavePCX (const Image &image, const std::filesystem::path &file)
 		for (int j = 0; j < image.width; j++)
 		{
 			if ((*data & 0xc0) != 0xc0)
-				stream <= *data++;
+				serialize_write(adapter, *data++);
 			else
 			{
-				stream <= 0xc1;
-				stream <= *data++;
+				serialize_write(adapter, 0xc1);
+				serialize_write(adapter, *data++);
 			}
 		}
 
 	// write the palette
-	stream <= 0x0c;	// palette ID byte
+	serialize_write(adapter, 0x0c);	// palette ID byte
 	
 	stream.write(reinterpret_cast<const char *>(image.palette()), image.palette_size());
 }

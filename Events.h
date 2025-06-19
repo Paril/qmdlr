@@ -82,6 +82,7 @@
 	x(Delete), \
 	x(Remove), \
 	x(Detach), \
+	x(CleanVertices), \
  \
 	x(Last)
 

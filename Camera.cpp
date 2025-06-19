@@ -1,7 +1,7 @@
 #include <algorithm>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/norm.hpp>
-#include "camera.h"
+#include "Camera.h"
 
 void Camera::lookAt(const Vector3 &target)
 {
